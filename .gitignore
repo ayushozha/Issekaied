@@ -16,3 +16,7 @@ assets/environment-kits/**/Assets/obj/
 .gstack/
 
 Start-Mac-Bridge.command
+
+assets/audio/**/raw-chunks/
+
+assets/audio/**/PROVENANCE.json
