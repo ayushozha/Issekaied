@@ -3,17 +3,24 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera';
 import { PointLight } from '@babylonjs/core/Lights/pointLight';
-import type { Vec3 } from '../../shared/protocol';
-import { WORLD, resolveCollisions } from './world';
+import { Mesh } from '@babylonjs/core/Meshes/mesh';
+import type { GlowLayer } from '@babylonjs/core/Layers/glowLayer';
+import type { CombatAction, Vec3 } from '../../shared/protocol';
+import { WORLD, loadKit, placeKit, resolveCollisions } from './world';
 
 const LOOK_SPEED = 0.0022;
 const MAX_PITCH = 1.45;
+const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight']);
+
+const isTypingTarget = (t: EventTarget | null): boolean =>
+  t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t instanceof HTMLButtonElement;
 
 interface Predicted { seq: number; x: number; z: number }
 
 /**
- * First-person controller with client-side prediction. Movement is integrated locally against the
- * shared obstacle boxes and reconciled against the server's acked position; the server stays
+ * First-person controller with deliberate input: movement only from keys actually held while the
+ * pointer is locked and gameplay is enabled; every action is one discrete press. Prediction runs
+ * against the shared obstacle boxes and reconciles to the server's acked position; the server stays
  * authoritative for the real position, HP and hits.
  */
 export class LocalPlayer {
@@ -22,19 +29,25 @@ export class LocalPlayer {
   yaw = 0;
   pitch = 0;
   locked = false;
-  /** Settings-driven: mouse-look multiplier and head-bob opt-out. */
+  /** Gameplay gate set by the session: alive, connected, not paused. Nothing moves while false. */
+  inputEnabled = false;
   sensitivity = 1;
-  reduceMotion = false;
-  onAttack: (() => void) | null = null;
+  reduceMotion = true;
+  onAction: ((action: CombatAction) => void) | null = null;
+  onInteract: (() => void) | null = null;
   onLockChange: ((locked: boolean) => void) | null = null;
   onLockError: ((reason: string) => void) | null = null;
+  /** Window blur or document hidden: held input is already cleared; the session decides how to resume. */
+  onFocusLost: (() => void) | null = null;
+  /** Hold-V push-to-talk for The Source (true on press, false on release); never from a text field. */
+  onHoldTalk: ((held: boolean) => void) | null = null;
   private readonly keys = new Set<string>();
   private readonly lantern: PointLight;
   private readonly history: Predicted[] = [];
   private bobPhase = 0;
   private speed = 0;
 
-  constructor(scene: Scene, private readonly canvas: HTMLCanvasElement) {
+  constructor(scene: Scene, private readonly canvas: HTMLCanvasElement, glow: GlowLayer | null = null) {
     this.pos = Vector3.FromArray(WORLD.spawn);
     this.camera = new FreeCamera('hunter-camera', this.pos.clone(), scene);
     this.camera.minZ = 0.1;
@@ -46,18 +59,55 @@ export class LocalPlayer {
     this.lantern = new PointLight('hunter-lantern', this.pos.clone(), scene);
     this.lantern.diffuse = new Color3(1, 0.78, 0.5);
     this.lantern.specular = Color3.Black();
-    this.lantern.intensity = 0.65;
-    this.lantern.range = 11;
+    this.lantern.intensity = 0.55;
+    this.lantern.range = 10;
 
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
-      this.keys.add(e.code);
+      if (e.code === 'KeyV' && !isTypingTarget(e.target)) {
+        this.onHoldTalk?.(true);
+        return;
+      }
+      if (!this.locked) {
+        // Mouse free (e.g. after a fall the lock is released): one deliberate E may still reach the session,
+        // which only honours it for the return-after-fall path. Never while a field or control has focus.
+        if (e.code === 'KeyE' && !isTypingTarget(e.target)) this.onInteract?.();
+        return; // everything else belongs to the menus whenever the mouse is free
+      }
+      switch (e.code) {
+        case 'KeyQ':
+          e.preventDefault();
+          this.onAction?.('incantation');
+          return;
+        case 'KeyR':
+          e.preventDefault();
+          this.onAction?.('heal');
+          return;
+        case 'KeyE':
+          e.preventDefault();
+          this.onInteract?.();
+          return;
+      }
+      if (MOVE_KEYS.has(e.code)) this.keys.add(e.code);
     });
-    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('keyup', (e) => {
+      this.keys.delete(e.code);
+      if (e.code === 'KeyV') this.onHoldTalk?.(false);
+    });
+    window.addEventListener('blur', () => {
+      this.clearHeld();
+      this.onHoldTalk?.(false);
+      this.onFocusLost?.();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) return;
+      this.clearHeld();
+      this.onHoldTalk?.(false);
+      this.onFocusLost?.();
+    });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === canvas;
-      if (!this.locked) this.keys.clear();
+      if (!this.locked) this.clearHeld();
       this.onLockChange?.(this.locked);
     });
     document.addEventListener('pointerlockerror', () => this.onLockError?.('the browser refused to lock the mouse'));
@@ -67,15 +117,26 @@ export class LocalPlayer {
       this.yaw += e.movementX * k;
       this.pitch = Math.min(MAX_PITCH, Math.max(-MAX_PITCH, this.pitch + e.movementY * k));
     });
+    // One discrete action per press; holding a button never repeats.
     canvas.addEventListener('mousedown', (e) => {
-      if (e.button === 0 && this.locked) this.onAttack?.();
+      if (!this.locked) return;
+      if (e.button === 0) this.onAction?.('primary');
+      else if (e.button === 2) this.onAction?.('secondary');
     });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // only the game canvas
+
+    void this.attachViewmodel(scene, glow);
+  }
+
+  /** Drops every held key and any residual speed: blur, pause, defeat, disconnect, teardown. */
+  clearHeld(): void {
+    this.keys.clear();
+    this.speed = 0;
   }
 
   /**
-   * Pointer lock is only ever requested from a user gesture (Enter, Resume or a canvas click).
-   * Failures surface through `onLockError` (promise rejection in Chromium, `pointerlockerror` elsewhere)
-   * so the UI can offer a retry instead of leaving the player stuck behind a hidden menu.
+   * Pointer lock is only ever requested from a user gesture (Enter, Resume, Return to Bellgrave).
+   * Failures surface through `onLockError` so the UI can offer a retry.
    */
   requestLock(): void {
     if (document.pointerLockElement === this.canvas) return;
@@ -92,12 +153,12 @@ export class LocalPlayer {
   }
 
   get sprinting(): boolean {
-    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+    return this.inputEnabled && (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'));
   }
 
-  /** World-space move vector (length ≤ 1) built from WASD relative to the current yaw. */
+  /** World-space move vector (length ≤ 1) from WASD actually held, relative to the current yaw. */
   moveInput(): { x: number; z: number } {
-    if (!this.locked) return { x: 0, z: 0 };
+    if (!this.locked || !this.inputEnabled) return { x: 0, z: 0 };
     const fwd = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0);
     const side = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);
     if (!fwd && !side) return { x: 0, z: 0 };
@@ -124,7 +185,7 @@ export class LocalPlayer {
   update(dt: number): void {
     const move = this.moveInput();
     const target = move.x || move.z ? (this.sprinting ? WORLD.sprintSpeed : WORLD.walkSpeed) : 0;
-    this.speed += (target - this.speed) * Math.min(1, dt * 12);
+    this.speed = this.inputEnabled ? this.speed + (target - this.speed) * Math.min(1, dt * 12) : 0;
     this.pos.x += move.x * this.speed * dt;
     this.pos.z += move.z * this.speed * dt;
     resolveCollisions(this.pos, WORLD.playerRadius);
@@ -164,5 +225,19 @@ export class LocalPlayer {
   teleport(p: Vec3): void {
     this.pos.set(p[0], p[1], p[2]);
     this.history.length = 0;
+    this.speed = 0;
+  }
+
+  /** Small hand lantern in the lower right of the view (Kenney CC0 prop); purely cosmetic, skipped on failure. */
+  private async attachViewmodel(scene: Scene, glow: GlowLayer | null): Promise<void> {
+    const kit = await loadKit(scene, 'lantern-candle.glb');
+    if (!kit) return;
+    const holder = placeKit(kit, 'viewmodel-lantern', Vector3.Zero(), -0.4, 0.45);
+    holder.parent = this.camera;
+    holder.position.set(0.42, -0.36, 0.95);
+    for (const m of holder.getChildMeshes()) {
+      m.isPickable = false;
+      if (m instanceof Mesh) glow?.addExcludedMesh(m);
+    }
   }
 }
