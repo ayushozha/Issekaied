@@ -5,6 +5,7 @@ assets/environment-kits/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-b
 assets/environments/babylon/*.glb binary
 *.png binary
 *.glb binary
+*.gltf binary
 *.bin binary
 *.fbx binary
 *.zip binary

@@ -3,7 +3,7 @@
 !.env.example
 node_modules/
 dist/
-.claude-orchestration/
+.*orchestration/
 *.log
 *.tsbuildinfo
 output/
