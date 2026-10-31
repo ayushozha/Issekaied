@@ -15,13 +15,15 @@ The public URL is https://issekaied.ayushojha.com. The upgraded frontend and bac
 - Public HTTPS, WebSocket upgrade, mounted Source routes and backend-only credential boundaries passed. Requests for `.env` and `.git/config` return 403.
 - Public process counters at 22:07 UTC: 175 Supabase writes, 82 Terse calls, 10 game Relay messages sent, 14 Mastra/OpenAI responses, 14 NPC voice responses and five Superserve jobs created and cleaned up. These are observed counters, not billing receipts. One Terse request used fallback; actor reachability had recovered at capture.
 
-## Public gameplay acceptance in progress
+## Public gameplay evidence
 
 - Initial public browser: approved splash artwork, successful server connection and no page errors.
 - Public combat: normal mouse aim, sprint, discrete primary attacks and Ganesha invocation banished Morrow as "Ayush Demo". The server recorded that hunter in Morrow's memory; the player retained 92 HP. No development teleport or state changes were used.
-- Still checking: a grounded response and the ghost's remembered return.
-- Ask The Source for the current objective through text and voice.
-- Verify persistent event writes and actual provider modes after the encounter.
+- Remembered return: Morrow addressed "Ayush Demo" and recalled the Ganesha banishment and its earlier defeat of that player. Other NPC dialogue reacted to the same banishment.
+- Public Source: connected WebRTC peer, active remote audio stream and a fresh `get_game_state` call produced spoken directions grounded in the current safe-gate/sigil objective. Text questions passed. A controlled 3.8-second spoken fixture also produced upstream speech-start/stop/commit events, a game-state lookup and a spoken reply; its track disabled immediately on release. No ambient microphone was recorded. A physical microphone still needs a human check.
+- Both frontend and backend were built from complete `main` and automatically activated at 22:10 UTC. The minute timer subsequently checked the same revision successfully; HTTPS, WebSocket upgrade, Source authorization probes and provider modes passed after activation.
+
+The complete boss/echo route passed the isolated network progression check; a full public-browser completion has not been claimed.
 
 The synthetic capacity and isolated progression checks do not prove 50 real browsers or production readiness.
 
