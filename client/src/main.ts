@@ -3,16 +3,28 @@ import { Scene } from '@babylonjs/core/scene';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { GlowLayer } from '@babylonjs/core/Layers/glowLayer';
 import { registerBuiltInLoaders } from '@babylonjs/loaders/dynamic';
-import { powerForEnemyLevel, type GameEvent, type PlayerState, type PowerId, type RoomSnapshot } from '../../shared/protocol';
+import {
+  powerForEnemyLevel,
+  type AdventureState,
+  type CombatAction,
+  type EnemyState,
+  type GameEvent,
+  type PlayerState,
+  type PowerId,
+  type RoomSnapshot,
+} from '../../shared/protocol';
 import { CHANNELS } from './powers';
 import { WORLD, buildWorld } from './world';
 import { LocalPlayer } from './player';
 import { EntityLayer } from './entities';
 import { EffectsLayer } from './effects';
 import { Hud } from './hud';
-import { Menus, type Settings } from './menus';
-import { NetClient, sanitizeName } from './net';
+import { Menus, type Recitation, type Settings } from './menus';
+import { NetClient, sanitizeName, type InteractTarget } from './net';
 import { LocalPreview } from './offline';
+import { AudioEngine, NPC_INTROS, SACRED, safeServerAudioUrl, type MusicPhase } from './audio';
+import { dressHalloween } from './halloween-props';
+import { DIRECTIONS, SourceVoice } from './source-voice';
 
 registerBuiltInLoaders();
 
@@ -21,137 +33,341 @@ const engine = new Engine(canvas, true, { stencil: false, preserveDrawingBuffer:
 engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 1.5));
 const scene = new Scene(engine);
 const glow = new GlowLayer('glow', scene, { blurKernelSize: 32 });
-glow.intensity = 0.7;
+glow.intensity = 0.55;
 
-const hud = new Hud();
-const player = new LocalPlayer(scene, canvas);
-const entities = new EntityLayer(scene);
+const hud = new Hud({
+  onRetry: () => net?.retryNow(),
+  onReturnToTitle: () => leaveToTitle(),
+  onRespawn: () => respawn(),
+  onDevPreview: () => startDevPreview(),
+});
+const player = new LocalPlayer(scene, canvas, glow);
+const entities = new EntityLayer(scene, glow);
+entities.onAssetIssue = (text) => hud.whisper(text, undefined, true);
 const effects = new EffectsLayer(scene);
-const menus = new Menus({
+
+const RECITATIONS: Record<Recitation, { url: string; caption: string }> = {
+  hanuman: { url: SACRED.hanumanFull, caption: 'Hanuman Chalisa · synthesized recitation' },
+  shiva: { url: SACRED.shivaFull, caption: 'Shiva Tandava Stotram · synthesized recitation' },
+  mantra: { url: SACRED.mrityunjaya, caption: 'Maha Mrityunjaya mantra · synthesized recitation' },
+};
+
+const menus: Menus = new Menus({
   onEnter: (name) => enter(name),
   onResume: () => resume(),
   onReturnToTitle: () => leaveToTitle(),
   onSettings: (s) => applySettings(s),
+  onGesture: () => audio.unlock(),
+  onListen: (kind) => audio.listen(kind ? RECITATIONS[kind].url : null),
+  recitationAvailable: (kind): Promise<boolean> => audio.available(RECITATIONS[kind].url),
 });
+const audio: AudioEngine = new AudioEngine(menus.settings, (text, speaker) => hud.whisper(text, speaker, false, true));
 applySettings(menus.settings);
-buildWorld(scene, { report: (t) => menus.setMainStatus(t) });
+const world = buildWorld(scene, { report: (t) => menus.setMainStatus(t) });
+void dressHalloween(scene);
 
-// Session state. `net` doubles as the "a hunt is in progress" flag; everything below is reset by leaveToTitle().
+// ---- session state (everything below is reset by leaveToTitle) -------------------------------
 let net: NetClient | null = null;
 let preview: LocalPreview | null = null;
+let sessionName = 'Hunter';
 let selfId: string | null = null;
 let self: PlayerState | null = null;
-let lastHp = 100;
-let lastPredictedCast: { power: PowerId; at: number } | null = null;
+let dead = false;
+let lastDeathText = '';
+let lastAdventure: AdventureState | undefined;
 let inputTimer = 0;
+let lastCombatAt = 0;
+let scareUntil = 0;
+let lastPrimary: { power: PowerId; at: number } | null = null;
+/** Cleared on blur/hidden; only a deliberate Enter/Resume gesture sets it again. */
+let focused = true;
+const introduced = new Set<string>();
 
 const serverNow = () => net?.serverNow() ?? Date.now();
 const online = () => !!net?.online;
+const sessionActive = () => net !== null || preview !== null;
+/** A real session that is not currently answered by the server: the connection panel owns the screen. */
+const connectionPanelVisible = () => net !== null && !online();
+/** The only state in which held keys may move the hunter and actions may be sent. */
+const inputAllowed = () => (online() || !!preview?.running) && !dead && focused && player.locked && menus.current === null;
 
 function applySettings(s: Settings): void {
   player.sensitivity = s.sensitivity;
   player.reduceMotion = s.reduceMotion;
+  effects.setReducedMotion(s.reduceMotion);
+  audio?.applySettings(s);
 }
+
+/** Re-evaluates the gate; when it closes, held input is dropped and an idle packet goes out immediately. */
+function refreshInputGate(): void {
+  const allowed = inputAllowed();
+  if (player.inputEnabled && !allowed) {
+    player.clearHeld();
+    sendIdle();
+  }
+  player.inputEnabled = allowed;
+  preview?.setActive(allowed);
+}
+
+function sendIdle(): void {
+  if (online() && net) net.sendInput(0, 0, player.yaw, player.pitch, false, false);
+}
+
+const distXZ = (a: Vector3, p: readonly number[]) => Math.hypot(p[0] - a.x, p[2] - a.z);
 
 // ---- snapshots & events -----------------------------------------------------------------------
 
 function applySnapshot(snap: RoomSnapshot): void {
-  if (!net) return; // late message after return to title
+  if (!sessionActive()) return; // late message after return to title
+  const now = serverNow();
   self = snap.players.find((p) => p.id === selfId) ?? null;
   if (self) {
     if (preview?.running) player.pos.y = self.position[1];
     else player.reconcile(self.position, self.ackSeq);
-    if (self.hp < lastHp) hud.flash('#ff2a2a');
-    if (self.hp > 0 && lastHp <= 0) player.teleport(self.position);
-    lastHp = self.hp;
-    hud.setSelf(self);
+    if (self.hp <= 0 && !dead) onDefeated();
+    if (self.hp > 0 && dead) onRevived(self.position);
+    hud.setSelf(self, now);
   }
   entities.applySnapshot(snap, selfId);
-  hud.setPlayers(snap.players, selfId);
-  hud.setEnemies(snap.enemies, serverNow());
+  lastAdventure = snap.adventure;
+  world.setPortalReady(!!snap.adventure?.portalReady);
+  hud.setAdventure(snap.adventure, snap.enemies, snap.players.length, nextTarget(snap.adventure, snap.enemies));
+  updateMusic(snap);
+  maybeIntroduce(snap);
 }
 
+function nextTarget(adv: AdventureState | undefined, enemies: EnemyState[]): { name: string; zone: string; dist: number } | null {
+  const e = adv?.targetId ? enemies.find((x) => x.id === adv.targetId) : undefined;
+  if (!e) return null;
+  const zone = WORLD.adventure.zones.find((z) => z.id === e.id)?.name ?? '';
+  return { name: e.name, zone, dist: distXZ(player.camera.position, e.position) };
+}
+
+/** Authoritative fall: freeze, release the mouse, show the retry panel. No timer brings the hunter back. */
+function onDefeated(): void {
+  dead = true;
+  refreshInputGate();
+  player.releaseLock();
+  hud.setDefeat(true, lastDeathText);
+  audio.sfx.hurt();
+}
+
+function onRevived(pos: PlayerState['position']): void {
+  dead = false;
+  hud.setDefeat(false);
+  player.teleport(pos);
+  refreshInputGate();
+}
+
+/** Music phase from what the room actually contains: aggro, distance, the keeper, recent combat. */
+function updateMusic(snap: RoomSnapshot): void {
+  if (!self) return;
+  const now = Date.now();
+  const eye = player.camera.position;
+  let nearestHunting = Infinity;
+  let nearestAggro = Infinity;
+  let bossAwake = false;
+  for (const e of snap.enemies) {
+    if (e.state !== 'hunting') continue;
+    const d = distXZ(eye, e.position);
+    nearestHunting = Math.min(nearestHunting, d);
+    if (e.aggro) {
+      nearestAggro = Math.min(nearestAggro, d);
+      if (e.id === WORLD.adventure.bossId) bossAwake = true;
+    }
+  }
+  let phase: MusicPhase;
+  if (dead) phase = 'fallen';
+  else if (scareUntil > now) phase = 'scare';
+  else if (bossAwake) phase = 'boss';
+  else if (nearestAggro <= 14 || now - lastCombatAt < 6000) phase = 'combat';
+  else if (nearestHunting <= 12) phase = 'tension';
+  else if (nearestHunting < Infinity) phase = 'explore';
+  else phase = 'respite';
+  audio.setPhase(phase);
+  hud.setNowPlaying(audio.currentTrack ? `♪ ${audio.currentTrack.replace(/\.ogg$/, '')}` : '');
+}
+
+/** Fixed intro clip, once per haunt per page session, when it is hunting within 10 m and nothing else is speaking. */
+function maybeIntroduce(snap: RoomSnapshot): void {
+  if (!self || dead || audio.speaking) return;
+  const eye = player.camera.position;
+  for (const e of snap.enemies) {
+    if (e.state !== 'hunting' || introduced.has(e.id)) continue;
+    const intro = NPC_INTROS[e.id];
+    if (!intro || distXZ(eye, e.position) > 10) continue;
+    if (audio.say({ url: intro.url, caption: intro.text, speaker: e.name })) {
+      introduced.add(e.id);
+      return;
+    }
+  }
+}
+
+function invocationAudio(power: PowerId): void {
+  audio.sfx.cast(power);
+  if (power === 'hanuman') audio.cue(SACRED.hanumanCue, 'Hanuman Chalisa · synthesized recitation', 'Chant');
+  if (power === 'shiva') audio.cue(SACRED.shivaCue, 'Shiva Tandava Stotram · synthesized recitation', 'Chant');
+}
+
+const feetOf = (eye: Vector3) => eye.add(new Vector3(0, -1.6, 0));
+
 function handleEvent(ev: GameEvent): void {
-  if (!net) return;
+  if (!sessionActive()) return;
   const at = ev.position ? Vector3.FromArray(ev.position) : entities.positionOf(ev.toId ?? ev.fromId);
   const name = (id: string | undefined) => (id ? entities.enemyState(id)?.name ?? (id === selfId ? self?.name : undefined) ?? 'A hunter' : 'Someone');
+  // Server-generated speech: same-origin /api/audio/... only; anything else is ignored, failures are silent.
+  const voiceUrl = safeServerAudioUrl(ev.audioUrl);
+  if (voiceUrl) audio.say({ url: voiceUrl, speaker: entities.enemyState(ev.fromId)?.name }, true);
+  if (ev.fromId === selfId || ev.toId === selfId) lastCombatAt = Date.now();
+
   switch (ev.kind) {
     case 'cast': {
-      if (!ev.power) return;
+      const action: CombatAction = ev.action ?? 'primary';
+      const eye = player.camera.position.clone();
+      if (action === 'heal') {
+        // An accepted recovery carries no deity power. The authority already changed HP; the client only
+        // plays the mantra once (bounded) and never on a rejected cast.
+        const origin = ev.fromId === selfId ? eye : (at ?? entities.nodeOf(ev.fromId)?.position ?? null);
+        if (!origin) return;
+        effects.heal(feetOf(origin));
+        if (ev.fromId === selfId) audio.cue(SACRED.mrityunjaya, 'Maha Mrityunjaya mantra · synthesized recitation', 'Chant');
+        return;
+      }
+      if (!ev.power) return; // every deity-power action names its channel
       if (ev.fromId === selfId) {
-        // Already predicted locally unless the server picked a different channel than we expected.
-        const recent = lastPredictedCast && Date.now() - lastPredictedCast.at < 600;
-        if (recent && lastPredictedCast?.power === ev.power) return;
-        hud.invocationCue(CHANNELS[ev.power]);
-        effects.cast(ev.power, player.camera.position.clone(), Vector3.FromArray(player.aim()), null);
-        if (ev.power === 'ganesha') hud.flash(CHANNELS.ganesha.color);
+        // Only the primary strike is predicted locally; the server's event must not replay it.
+        if (action === 'primary') {
+          const recent = lastPrimary && Date.now() - lastPrimary.at < 600 && lastPrimary.power === ev.power;
+          if (!recent) strikeFx(ev.power, null);
+          return;
+        }
+        if (action === 'incantation') {
+          hud.invocationCue(CHANNELS[ev.power]);
+          effects.cast(ev.power, eye, Vector3.FromArray(player.aim()), null);
+          invocationAudio(ev.power);
+        } else if (action === 'secondary') {
+          effects.ward(feetOf(eye), CHANNELS[ev.power].color);
+          audio.sfx.cast(ev.power);
+        }
         return;
       }
       const node = entities.nodeOf(ev.fromId);
       const origin = at ?? node?.position ?? null;
       if (!origin) return;
-      const yaw = node?.rotation.y ?? 0;
-      effects.cast(ev.power, origin.clone(), new Vector3(Math.sin(yaw), 0, Math.cos(yaw)), node);
+      if (action === 'incantation') {
+        const yaw = node?.rotation.y ?? 0;
+        effects.cast(ev.power, origin.clone(), new Vector3(Math.sin(yaw), 0, Math.cos(yaw)), node);
+      } else if (action === 'secondary') effects.ward(feetOf(origin), CHANNELS[ev.power].color);
+      else effects.hit(ev.power, origin.add(new Vector3(0, -0.4, 0)));
       return;
     }
     case 'hit':
       if (at) effects.hit(ev.power, at);
-      if (ev.toId === selfId) hud.flash('#ff2a2a');
+      if (ev.toId === selfId) audio.sfx.hurt();
+      else {
+        if (ev.toId) entities.flashHit(ev.toId);
+        audio.sfx.hit();
+      }
       return;
     case 'banish':
       if (at) effects.banish(at);
+      audio.sfx.banish();
       hud.whisper(ev.text ?? `${name(ev.toId)} is banished by ${name(ev.fromId)}${ev.power ? ` through ${CHANNELS[ev.power].deity}` : ''}.`, undefined, true);
       return;
-    case 'return':
+    case 'return': {
       if (at && ev.fromId !== selfId) effects.returned(at);
+      const memory = entities.enemyState(ev.fromId)?.memory;
+      if (self && memory?.lastHunterName === self.name) scareUntil = Date.now() + 20000;
       hud.whisper(ev.text ?? `${name(ev.fromId)} returns.`, undefined, true);
       return;
+    }
     case 'whisper':
       hud.whisper(ev.text ?? '…', entities.enemyState(ev.fromId)?.name ?? (ev.fromId === 'system' ? undefined : name(ev.fromId)), ev.fromId === 'system');
       return;
     case 'death':
+      if (ev.fromId === selfId || ev.toId === selfId) lastDeathText = ev.text ?? `${name(ev.toId)} remembers your last encounter.`;
       hud.whisper(ev.text ?? `${name(ev.fromId)} has fallen.`, undefined, true);
       return;
     case 'power':
+    case 'quest':
       if (ev.text) hud.whisper(ev.text, undefined, true);
       return;
+    case 'portal': {
+      const p = at ?? Vector3.FromArray(WORLD.adventure.portal.position).add(new Vector3(0, 1.7, 0));
+      effects.returned(p);
+      if (ev.text) hud.whisper(ev.text, undefined, true);
+      return;
+    }
   }
 }
 
-// ---- input & attack ---------------------------------------------------------------------------
+// ---- deliberate actions -----------------------------------------------------------------------
 
-function attack(): void {
-  if (!self || self.hp <= 0) return;
+function strikeFx(power: PowerId, target: Vector3 | null): void {
+  audio.sfx.cast(power);
+  effects.primary(player.camera.position.clone(), Vector3.FromArray(player.aim()), target);
+}
+
+/** One discrete action per press. Local feedback only for the primary strike; everything else waits for the authority. */
+function act(action: CombatAction): void {
+  if (!inputAllowed()) return;
+  if (!hud.isReady(action, serverNow())) return;
   const aim = player.aim();
-  const aimV = Vector3.FromArray(aim);
-  const target = entities.pickTarget(player.camera.position, aimV);
-  const expected = powerForEnemyLevel(target?.level ?? 1);
-  const now = serverNow();
-  if (!hud.isReady(expected, now)) {
-    hud.flash('#444');
+  if (action === 'primary') {
+    const target = entities.pickTarget(player.camera.position, Vector3.FromArray(aim));
+    const power = powerForEnemyLevel(target?.level ?? 1);
+    lastPrimary = { power, at: Date.now() };
+    strikeFx(power, target ? Vector3.FromArray(target.position) : null);
+  }
+  if (online()) net?.sendCast(aim, action);
+  else preview?.cast(aim, action);
+}
+
+function nearbyInteract(): { target: InteractTarget; text: string; enabled: boolean } | null {
+  if (!sessionActive()) return null;
+  if (dead) return { target: 'respawn', text: 'Return to Bellgrave', enabled: true };
+  const { shrine, portal } = WORLD.adventure;
+  const eye = player.camera.position;
+  // Exactly the shared landmark radius, matching the server's nearLandmark check, so E never promises a rejected interaction.
+  if (distXZ(eye, shrine.position) <= shrine.radius) return { target: 'shrine', text: 'Commune with the shrine', enabled: true };
+  if (distXZ(eye, portal.position) <= portal.radius) {
+    const ready = !!lastAdventure?.portalReady;
+    return { target: 'portal', text: ready ? 'Enter the echo portal' : 'The portal is sealed', enabled: ready };
+  }
+  return null;
+}
+
+function interact(): void {
+  if (menus.current !== null) return;
+  const near = nearbyInteract();
+  if (!near?.enabled) return;
+  if (near.target === 'respawn') {
+    respawn();
     return;
   }
-  if (target) {
-    // Predict the server's channel choice for instant feedback; the 'cast' event confirms or corrects.
-    lastPredictedCast = { power: expected, at: Date.now() };
-    hud.invocationCue(CHANNELS[expected]);
-    effects.cast(expected, player.camera.position.clone(), aimV, null);
-    if (expected === 'ganesha') hud.flash(CHANNELS.ganesha.color);
-  } else {
-    lastPredictedCast = null;
-  }
-  if (online()) net?.sendCast(aim);
-  else preview?.cast(aim);
+  if (!inputAllowed()) return;
+  if (online()) net?.sendInteract(near.target);
+  else preview?.interact(near.target);
+}
+
+/** Explicit return after a fall (E or the panel button); the server decides when the hunter is back. */
+function respawn(): void {
+  if (!dead || !sessionActive()) return;
+  if (online()) net?.sendInteract('respawn');
+  else preview?.interact('respawn');
+  player.requestLock(); // the click/key is the gesture
 }
 
 function startInputLoop(): void {
   window.clearInterval(inputTimer);
   const rate = net?.tickRate ?? 20;
   inputTimer = window.setInterval(() => {
-    const move = player.moveInput();
-    if (online() && net) {
-      const seq = net.sendInput(move.x, move.z, player.yaw, player.pitch, player.sprinting);
-      player.record(seq);
+    if (!online() || !net) return;
+    if (inputAllowed()) {
+      const move = player.moveInput();
+      player.record(net.sendInput(move.x, move.z, player.yaw, player.pitch, player.sprinting, true));
+    } else {
+      net.sendInput(0, 0, player.yaw, player.pitch, false, false);
     }
   }, 1000 / rate);
 }
@@ -159,28 +375,36 @@ function startInputLoop(): void {
 // ---- session ----------------------------------------------------------------------------------
 
 function startSession(name: string): void {
-  preview = new LocalPreview(name, {
-    getSelf: () => ({ pos: player.pos, yaw: player.yaw, pitch: player.pitch }),
-    onSnapshot: applySnapshot,
-    onEvent: handleEvent,
-  });
+  sessionName = name;
+  dead = false;
+  hud.setConnection('connecting', '');
+  hud.setStatus('connecting', 'connecting');
   net = new NetClient(name, 'bellgrave', {
     onWelcome: (msg) => {
-      preview?.stop();
       selfId = msg.selfId;
-      lastHp = 100;
+      dead = false;
       hud.whisper(`Joined ${msg.roomId} as ${name}.`, undefined, true);
+      hud.setConnection('hidden', '');
       startInputLoop();
+      refreshInputGate();
+      audio.setPhase('explore');
+      // The mouse is free while connecting; taking it requires a deliberate click, never an automatic lock.
+      if (!player.locked && (menus.current === null || menus.current === 'pause')) {
+        menus.setPauseStatus('Connected to Bellgrave. Click Resume hunting to take the mouse.');
+        menus.show('pause');
+        audio.setPaused(true);
+      }
     },
     onSnapshot: applySnapshot,
     onEvent: handleEvent,
-    onStatus: (status, detail) => {
-      if (status === 'online') preview?.stop();
-      if (status === 'offline' && preview && !preview.running) {
-        selfId = preview.selfId;
-        preview.start();
-      }
-      hud.setStatus(status, detail, !!preview?.running);
+    onStatus: (status, detail, hadWelcome) => {
+      hud.setStatus(status, detail);
+      if (status === 'online') hud.setConnection('hidden', '');
+      else if (status === 'connecting') hud.setConnection(hadWelcome ? 'lost' : 'connecting', detail);
+      else if (status === 'offline') hud.setConnection(hadWelcome ? 'lost' : 'retrying', detail);
+      else hud.setConnection('failed', detail);
+      refreshInputGate(); // frozen whenever the authority is not answering
+      if (status !== 'online') player.releaseLock(); // the panel's buttons must be reachable with a real mouse
     },
     onServerError: (code, message) => hud.whisper(`${code}: ${message}`, 'server', true),
   });
@@ -188,74 +412,270 @@ function startSession(name: string): void {
   startInputLoop();
 }
 
-/** Enter Bellgrave from the main menu (user gesture). Pointer lock is requested here and nowhere automatic. */
+/** Dev-only, explicit: replaces the (failed) connection with a local synthetic room. Stripped from production. */
+function startDevPreview(): void {
+  if (!import.meta.env.DEV || preview) return;
+  net?.dispose();
+  net = null;
+  window.clearInterval(inputTimer);
+  preview = new LocalPreview(sessionName, {
+    getSelf: () => ({ pos: player.pos, yaw: player.yaw, pitch: player.pitch }),
+    onSnapshot: applySnapshot,
+    onEvent: handleEvent,
+  });
+  selfId = preview.selfId;
+  dead = false;
+  preview.start();
+  hud.setConnection('hidden', '');
+  hud.setPreviewBanner(true);
+  hud.setStatus('offline', 'local synthetic preview (dev only)');
+  refreshInputGate();
+  audio.setPhase('explore');
+}
+
+/** Enter Bellgrave from the main menu (user gesture). Pointer lock and audio start here and nowhere automatic. */
 function enter(rawName: string): void {
-  if (!net) startSession(sanitizeName(rawName));
+  audio.unlock();
+  focused = true;
+  if (!sessionActive()) startSession(sanitizeName(rawName));
+  menus.setInSession(true);
   hud.show();
   menus.hide();
-  player.requestLock();
+  audio.setPaused(false);
+  // While the server has not answered, the connection panel owns the mouse; the lock comes from Resume after welcome.
+  if (online() || preview?.running) player.requestLock();
+  refreshInputGate();
 }
 
 /** Resume from the pause screen; the click itself is the gesture that permits re-locking the mouse. */
 function resume(): void {
-  if (!net) {
+  if (!sessionActive()) {
     menus.show('main');
     return;
   }
+  audio.unlock();
+  focused = true;
   hud.show();
   menus.hide();
+  audio.setPaused(false);
   player.requestLock();
+  refreshInputGate();
 }
 
-/** Ends the hunt: stops network and preview, drops all server-owned views, resets local state, shows the title. */
+// ---- The Source (realtime voice guide; a character, never an authority) --------------------------
+
+const sourceUi = {
+  status: document.getElementById('source-status') as HTMLElement,
+  log: document.getElementById('source-log') as HTMLUListElement,
+  mic: document.getElementById('btn-source-mic') as HTMLButtonElement,
+  text: document.getElementById('source-text') as HTMLInputElement,
+};
+let source: SourceVoice | null = null;
+let talkHeld = false;
+
+function sourceLog(role: 'source' | 'you' | 'system', text: string, final: boolean): void {
+  const last = sourceUi.log.lastElementChild as HTMLLIElement | null;
+  if (!final && last?.dataset.role === role && last.dataset.final === 'false') {
+    last.textContent = `${role === 'source' ? 'The Source' : 'You'}: ${text}`;
+    return;
+  }
+  if (last?.dataset.final === 'false' && last.dataset.role === role) {
+    last.textContent = `${role === 'source' ? 'The Source' : 'You'}: ${text}`;
+    last.dataset.final = 'true';
+    return;
+  }
+  const li = document.createElement('li');
+  li.dataset.role = role;
+  li.dataset.final = String(final);
+  li.className = role;
+  li.textContent = role === 'system' ? text : `${role === 'source' ? 'The Source' : 'You'}: ${text}`;
+  sourceUi.log.appendChild(li);
+  while (sourceUi.log.children.length > 8) sourceUi.log.firstElementChild?.remove();
+}
+
+/** Built on first use, from a user gesture, with the same guest key the game socket is bound to. */
+function sourceClient(): SourceVoice | null {
+  if (!net) {
+    sourceUi.status.textContent = 'Enter Bellgrave with a live connection first.';
+    return null;
+  }
+  source ??= new SourceVoice(net.playerKey, 'bellgrave', {
+    onStatus: (status, detail) => {
+      sourceUi.status.textContent = status === 'idle' ? 'Not connected' : status === 'live' ? `Live · ${detail}` : status === 'connecting' ? `Connecting · ${detail}` : detail || status;
+      sourceUi.status.dataset.state = status;
+      sourceUi.mic.dataset.mic = status === 'live' && source?.hasMic ? (talkHeld ? 'on' : 'ready') : 'off';
+      if (status === 'live') sourceLog('system', 'The Source is listening.', true);
+    },
+    onTranscript: (role, text, final) => sourceLog(role, text, final),
+    onSpeaking: (active) => audio.setExternalSpeech(active),
+    onRemoteAudio: (el) => audio.attachRemoteAudio(el),
+    fetchContext: async () => {
+      const res = await fetch('/api/source/context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerKey: net?.playerKey, roomId: 'bellgrave' }),
+      });
+      if (!res.ok) throw new Error(`context ${res.status}`);
+      return (await res.json()) as unknown; // opaque: handed to the model as-is
+    },
+  });
+  return source;
+}
+
+/** Hold-V / mic button: transmit only while held. First hold connects with the microphone (the gesture). */
+function holdTalk(held: boolean): void {
+  if (!held) {
+    // Release is unconditional and idempotent: the mic track is disabled before any session/menu guard,
+    // and it never creates a client or connects.
+    talkHeld = false;
+    source?.setHeld(false);
+    sourceUi.mic.dataset.mic = source?.live && source.hasMic ? 'ready' : 'off';
+    return;
+  }
+  if (talkHeld) return;
+  if (!sessionActive() || menus.current === 'settings' || menus.current === 'credits') return;
+  const s = sourceClient();
+  if (!s) return;
+  talkHeld = true;
+  s.setHeld(true); // held state is recorded first, so a release during the permission prompt leaves the mic off
+  sourceUi.mic.dataset.mic = s.live && s.hasMic ? 'on' : 'off';
+  // A deliberate hold connects, or upgrades a text-only session to one with the microphone.
+  if (!s.live || !s.hasMic) void s.connect(true);
+}
+// Release must reach us even when a focused control stops bubbling: capture phase, plus the Source field taking focus.
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'KeyV') holdTalk(false);
+}, true);
+
+/** Text or directions. A first use connects (text only, no microphone) with the question folded into the opening response. */
+async function sourceAsk(text: string | null): Promise<void> {
+  if (!sessionActive()) return;
+  const s = sourceClient();
+  if (!s) return;
+  const turn = text === null ? DIRECTIONS : text.trim().slice(0, 400);
+  if (!turn) return;
+  if (!s.live) {
+    sourceLog('you', turn, true);
+    await s.connect(false, turn);
+    return;
+  }
+  if (text === null) s.askDirections();
+  else s.sendText(text);
+}
+
+player.onHoldTalk = holdTalk;
+for (const [ev, held] of [['pointerdown', true], ['pointerup', false], ['pointerleave', false], ['pointercancel', false]] as const) {
+  sourceUi.mic.addEventListener(ev, () => holdTalk(held));
+}
+(document.getElementById('btn-source-directions') as HTMLButtonElement).addEventListener('click', () => void sourceAsk(null));
+(document.getElementById('btn-source-stop') as HTMLButtonElement).addEventListener('click', () => {
+  source?.stop();
+  sourceUi.status.textContent = 'Not connected';
+  sourceUi.mic.dataset.mic = 'off';
+});
+(document.getElementById('source-form') as HTMLFormElement).addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = sourceUi.text.value;
+  sourceUi.text.value = '';
+  void sourceAsk(text);
+});
+// Typing to The Source must never move or strike the hunter: keys inside the field stop at the field.
+sourceUi.text.addEventListener('keydown', (e) => e.stopPropagation());
+sourceUi.text.addEventListener('keyup', (e) => e.stopPropagation());
+sourceUi.text.addEventListener('focus', () => holdTalk(false));
+
+/** Ends the hunt: stops network/preview/voices, drops server-owned views, resets local state, shows the title. */
 function leaveToTitle(): void {
   window.clearInterval(inputTimer);
   inputTimer = 0;
+  sendIdle();
+  source?.stop();
+  source = null;
+  talkHeld = false;
+  sourceUi.log.replaceChildren();
+  sourceUi.status.textContent = 'Not connected';
+  sourceUi.mic.dataset.mic = 'off';
   net?.dispose();
   net = null;
   preview?.stop();
   preview = null;
   selfId = null;
   self = null;
-  lastHp = 100;
-  lastPredictedCast = null;
+  dead = false;
+  lastDeathText = '';
+  lastAdventure = undefined;
+  lastCombatAt = 0;
+  scareUntil = 0;
+  lastPrimary = null;
+  focused = true;
+  // `introduced` is deliberately kept: each haunt's fixed intro plays at most once per page session.
+  player.clearHeld();
+  player.inputEnabled = false;
   entities.clear();
   hud.reset();
+  audio.stopSession();
+  world.setPortalReady(false);
   player.teleport(WORLD.spawn);
   player.yaw = 0;
   player.pitch = -0.02;
   player.releaseLock();
+  menus.setInSession(false);
   menus.show('splash');
 }
 
-player.onAttack = attack;
+player.onAction = act;
+player.onInteract = interact;
 player.onLockChange = (locked) => {
-  if (!net) return; // no hunt in progress: the menus own the screen
+  if (!sessionActive()) return; // no hunt in progress: the menus own the screen
   if (locked) {
     hud.show();
     menus.hide();
-  } else {
+    audio.setPaused(false);
+  } else if (!dead && !connectionPanelVisible()) {
+    // Defeat and connection panels own the free mouse; the pause overlay must not cover their buttons.
     menus.setPauseStatus('');
     menus.show('pause');
+    audio.setPaused(true);
   }
+  if (!locked) holdTalk(false); // releasing the mouse also releases push-to-talk
+  refreshInputGate();
 };
 player.onLockError = (reason) => {
-  if (!net || player.locked) return; // a late error while we already hold the lock is not a failure
+  if (!sessionActive() || player.locked) return;
   menus.setPauseStatus(`Mouse lock failed (${reason}). Click Resume to try again; browsers need a moment after Esc.`);
   menus.show('pause');
+  audio.setPaused(true);
+  refreshInputGate();
+};
+/** Focus left the page: freeze now, tell the server now, and require a deliberate Resume to continue. */
+player.onFocusLost = () => {
+  if (!sessionActive()) return;
+  focused = false;
+  refreshInputGate();
+  sendIdle();
+  holdTalk(false); // never keep transmitting after focus leaves
+  if (dead || connectionPanelVisible() || menus.current !== null) return; // those screens already own the resume path
+  player.releaseLock();
+  menus.setPauseStatus('The game lost focus. Click Resume hunting to continue.');
+  menus.show('pause');
+  audio.setPaused(true);
 };
 canvas.addEventListener('click', () => {
-  if (net && !player.locked && menus.current === null) player.requestLock();
+  if (sessionActive() && (online() || preview?.running) && !player.locked && !dead && menus.current === null) {
+    focused = true;
+    player.requestLock();
+  }
 });
 
 // Idle view behind the title screens: camera at spawn looking at the chapel.
 player.yaw = 0;
 player.pitch = -0.02;
 player.teleport(WORLD.spawn);
+menus.setInSession(false);
 
 if (import.meta.env.DEV) {
   // Dev-only inspection handle for smoke tests; stripped from production builds.
-  (window as unknown as { __issekaied?: unknown }).__issekaied = { scene, player, entities, menus };
+  (window as unknown as { __issekaied?: unknown }).__issekaied = { scene, player, entities, menus, audio, hud };
 }
 
 engine.runRenderLoop(() => {
@@ -264,7 +684,12 @@ engine.runRenderLoop(() => {
   entities.update(dt);
   const now = serverNow();
   hud.tick(now);
-  hud.setTarget(self ? entities.pickTarget(player.camera.position, Vector3.FromArray(player.aim())) : null, now);
+  const aim = Vector3.FromArray(player.aim());
+  const target = sessionActive() && !dead ? entities.pickTarget(player.camera.position, aim) : null;
+  hud.setTarget(target, target ? distXZ(player.camera.position, target.position) : 0, now);
+  entities.setTarget(target?.id ?? null);
+  const near = nearbyInteract();
+  hud.setInteract(near ? near.text : null);
   scene.render();
 });
 window.addEventListener('resize', () => engine.resize());
