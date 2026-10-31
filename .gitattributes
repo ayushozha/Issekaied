@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+# Preserve third-party asset files exactly as downloaded, including their format whitespace.
+assets/environment-kits/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab linguist-vendored
+assets/environments/babylon/*.glb binary
+*.png binary
+*.glb binary
+*.bin binary
+*.fbx binary
+*.zip binary
