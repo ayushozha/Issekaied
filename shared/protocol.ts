@@ -56,6 +56,8 @@ export interface GameEvent {
   power?: PowerId;
   position?: Vec3;
   text?: string;
+  /** Same-origin server-generated speech; never an arbitrary NPC-supplied external URL. */
+  audioUrl?: string;
 }
 
 export type ServerMessage =

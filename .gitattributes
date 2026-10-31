@@ -9,3 +9,9 @@ assets/environments/babylon/*.glb binary
 *.bin binary
 *.fbx binary
 *.zip binary
+
+*.mp3 binary
+
+*.ogg binary
+
+*.m4a binary
