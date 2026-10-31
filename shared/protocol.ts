@@ -6,6 +6,8 @@ export const powerForEnemyLevel = (level: number): PowerId =>
 export type Vec3 = [number, number, number];
 export type Species = 'ghost' | 'ghoul' | 'goblin' | 'orc' | 'beast' | 'rakshasa';
 export type GhostStrategy = 'chase' | 'flank' | 'keep_distance' | 'ambush';
+export const COMBAT_ACTIONS = ['primary', 'secondary', 'incantation', 'heal'] as const;
+export type CombatAction = typeof COMBAT_ACTIONS[number];
 
 export interface PlayerState {
   id: string;
@@ -17,6 +19,9 @@ export interface PlayerState {
   power: PowerId;
   cooldowns: Record<PowerId, number>;
   ackSeq: number;
+  skillCooldowns?: Partial<Record<CombatAction, number>>;
+  wardUntil?: number;
+  active?: boolean;
 }
 
 export interface EnemyState {
@@ -32,6 +37,17 @@ export interface EnemyState {
   strategy: GhostStrategy;
   memory: { banishments: number; lastPower?: PowerId; lastHunterName?: string; version: number };
   returnsAt: number;
+  aggro?: boolean;
+}
+
+export interface AdventureState {
+  stage: number;
+  sigils: number;
+  objective: string;
+  targetId?: string;
+  portalReady: boolean;
+  bossDefeated: boolean;
+  echo: number;
 }
 
 export interface RoomSnapshot {
@@ -39,21 +55,24 @@ export interface RoomSnapshot {
   serverTime: number;
   players: PlayerState[];
   enemies: EnemyState[];
+  adventure?: AdventureState;
 }
 
 export type ClientMessage =
   | { type: 'join'; v: 1; roomId: string; name: string; playerKey: string }
-  | { type: 'input'; v: 1; seq: number; moveX: number; moveZ: number; yaw: number; pitch: number; sprint: boolean }
-  | { type: 'cast'; v: 1; seq: number; aim: Vec3 };
+  | { type: 'input'; v: 1; seq: number; moveX: number; moveZ: number; yaw: number; pitch: number; sprint: boolean; active?: boolean }
+  | { type: 'cast'; v: 1; seq: number; aim: Vec3; action?: CombatAction }
+  | { type: 'interact'; v: 1; seq: number; target: 'shrine' | 'portal' | 'respawn' };
 
 export interface GameEvent {
   type: 'event';
   eventId: string;
   tick: number;
-  kind: 'cast' | 'hit' | 'banish' | 'return' | 'whisper' | 'death' | 'power';
+  kind: 'cast' | 'hit' | 'banish' | 'return' | 'whisper' | 'death' | 'power' | 'quest' | 'portal';
   fromId: string;
   toId?: string;
   power?: PowerId;
+  action?: CombatAction;
   position?: Vec3;
   text?: string;
   /** Same-origin server-generated speech; never an arbitrary NPC-supplied external URL. */

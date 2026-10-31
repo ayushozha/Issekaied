@@ -18,6 +18,9 @@ import {
   type Recall,
 } from './memory.ts';
 
+/** The Source: global omniscient narrator ledger (canonical id "global-source"). See source.ts. */
+export { Source } from './source.ts';
+
 /**
  * One durable actor per named enemy (actor id = enemy id, e.g. "vesper"). The whole memory is one
  * `@Persisted` field that is reassigned, never mutated in place, so every method commits a complete
