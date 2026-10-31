@@ -1,3 +1,4 @@
+import '@babylonjs/core/Meshes/instancedMesh'; // side effect: createInstance() used by kit props during buildWorld
 import { Engine } from '@babylonjs/core/Engines/engine';
 import { Scene } from '@babylonjs/core/scene';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
