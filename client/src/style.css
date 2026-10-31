@@ -193,6 +193,18 @@ html, body { margin: 0; height: 100%; background: var(--fog); overflow: hidden; 
 .settings-box a { color: #ffd98a; }
 .credits { width: min(560px, 100%); }
 .credits-box { max-height: 52vh; overflow-y: auto; }
+/* Leaderboard screen and join-link share block (same bronze/midnight palette as the settings box). */
+.board { width: min(560px, 100%); }
+.board-box { padding: 12px 14px; }
+.board-wrap { max-height: 50vh; overflow: auto; -webkit-overflow-scrolling: touch; }
+.board-table { width: 100%; border-collapse: collapse; font-size: 14px; color: #d9d2c0; }
+.board-table th, .board-table td { padding: 7px 8px; text-align: right; border-bottom: 1px solid rgba(233, 200, 119, 0.25); white-space: nowrap; }
+.board-table th { font-family: system-ui, sans-serif; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #e9c877; }
+.board-table th:first-child, .board-table td:first-child { text-align: left; }
+.board-table td:first-child { max-width: 220px; overflow: hidden; text-overflow: ellipsis; font-family: Georgia, serif; color: #efe6cf; }
+.share { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(233, 200, 119, 0.3); }
+.share-copy { margin: 0 0 8px; font-family: Georgia, serif; font-size: 16px; color: #efe6cf; }
+.join-link { width: 100%; margin-top: 8px; padding: 8px 10px; font-size: 13px; color: #ffd98a; background: rgba(6, 9, 16, 0.78); border: 1px solid rgba(233, 200, 119, 0.45); border-radius: 4px; }
 .tracks { margin: 0 0 8px; padding-left: 18px; font-size: 14px; color: #d9d2c0; line-height: 1.6; }
 .tracks b { color: #efe6cf; font-weight: 600; }
 .listen-row { align-items: start; }

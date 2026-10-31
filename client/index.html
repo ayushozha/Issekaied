@@ -31,7 +31,7 @@
       </section>
 
       <section id="leaderboard" class="panel leaderboard" aria-label="Hunter leaderboard">
-        <div class="label">The remembered · hunters</div>
+        <div class="label">Leaderboard · Top 5</div>
         <div class="leaderboard-heading"><span>Hunter</span><span>Banish / fallen</span></div>
         <ol id="leaderboard-list"></ol>
         <div id="leaderboard-status" class="small">Reading the ledger…</div>
@@ -120,10 +120,18 @@
         <label for="name">Hunter name</label>
         <input id="name" type="text" maxlength="16" autocomplete="off" placeholder="Hunter" />
         <button id="btn-enter" class="btn primary" type="button">Enter Bellgrave</button>
+        <button id="btn-leaderboard" class="btn" type="button">Leaderboard</button>
         <button id="btn-settings" class="btn" type="button">Settings</button>
         <button id="btn-credits" class="btn" type="button">Credits</button>
         <button id="btn-exit" class="btn" type="button">Exit</button>
         <p id="menu-status" class="menu-status"></p>
+        <div class="share">
+          <p class="share-copy">Join shared Bellgrave · up to 50 hunters</p>
+          <button id="btn-copy-link" class="btn" type="button">Copy join link</button>
+          <input id="join-link" class="join-link" type="text" readonly hidden aria-label="Join link" />
+          <p id="share-status" class="menu-status" aria-live="polite"></p>
+          <p class="fine">Friends open the same link and enter a name; everyone hunts in the one shared Bellgrave courtyard. No accounts or invite codes. Fifty hunters is the room's capacity goal, not a tested guarantee.</p>
+        </div>
         <ul class="controls">
           <li><b>WASD</b> move · <b>Shift</b> sprint · <b>Esc</b> pause and release the mouse</li>
           <li><b>LMB</b> attack · <b>RMB</b> ward · <b>Q</b> incantation · <b>R</b> recovery mantra · <b>E</b> shrine, portal or return</li>
@@ -133,6 +141,24 @@
           Silence three bells, wake the keeper at the eastern altar, then step through the echo portal in the same courtyard.
           Haunts remember who banished them.
         </p>
+      </section>
+
+      <section id="screen-leaderboard" class="screen board" data-screen="leaderboard" hidden>
+        <h2>Leaderboard · Top 10</h2>
+        <div class="settings-box board-box">
+          <p id="leaderboard-screen-status" class="menu-status" aria-live="polite">Reading the ledger…</p>
+          <div class="board-wrap">
+            <table class="board-table" aria-describedby="leaderboard-screen-status">
+              <thead>
+                <tr><th scope="col">Hunter</th><th scope="col">Banishes</th><th scope="col">Deaths</th><th scope="col">Joins</th><th scope="col">Minutes</th></tr>
+              </thead>
+              <tbody id="leaderboard-table-body"></tbody>
+            </table>
+          </div>
+          <p id="leaderboard-empty" class="fine" hidden>Be the first hunter.</p>
+        </div>
+        <button id="btn-leaderboard-refresh" class="btn" type="button">Refresh</button>
+        <button id="btn-leaderboard-back" class="btn" type="button">Back</button>
       </section>
 
       <section id="screen-pause" class="screen" data-screen="pause" hidden>

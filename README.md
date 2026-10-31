@@ -1,6 +1,6 @@
 # Issekaied — The Dead Remember
 
-A first-person Halloween adventure where the ghosts you banish remember your name, learn from the encounter, and come back with a grudge.
+A first-person Halloween adventure built around **stateful characters** and **agent-to-agent communication**: the ghosts you banish remember your name, share warnings, and come back with a grudge.
 
 <p align="center"><img src="docs/assets/submission-cover.jpg" width="480" alt="Issekaied concept cover: the Returned hunter, divine protectors and Bellgrave ghosts"></p>
 
@@ -28,11 +28,19 @@ Settings control music, voice, effects, look sensitivity and reduced motion. Vis
 
 The on-screen hunter leaderboard records banishments, deaths, arrivals and play time from server-authored events in Supabase. Ghost memory and player history continue across hunts.
 
-## A world that remembers
+## Stateful characters: a world that remembers
 
 A banishment records the hunter, power and event ID. The returning ghost retrieves that history, changes tactics and can speak about the encounter. Shiva, Vishnu and The Source retain shared context across games; The Source maintains player arrivals, deaths and banishments and answers questions using the current objective and world state.
 
 The Source uses OpenAI Realtime for two-way voice and text. Microphone access starts only through a player action; the game does not persist raw microphone audio. Recorded gameplay facts, rather than chat claims, update durable counters.
+
+## Agent-to-agent communication: a world that reacts
+
+After a banishment, Agent Relay carries a grounded warning through the enemy hivemind. Recipients can change tactics when the message is delivered. The pantheon shares invocation outcomes, while the Source distributes canonical world facts. Persistent state gives each character history; communication lets those characters influence one another.
+
+## Join the same world
+
+Open [issekaied.ayushojha.com](https://issekaied.ayushojha.com), enter a hunter name and join Bellgrave. Participants share the live room and see one another. A browser guest key keeps identity stable between visits; names alone are not identity. The server enforces a configured capacity of 50 hunters, but 50 simultaneous real browsers have not been load-tested. The hunter ledger records accepted joins and gameplay events in Supabase.
 
 ## How the sponsors are used
 
