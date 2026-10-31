@@ -1,0 +1,419 @@
+{
+  "createdAtUtc": "2026-10-31T20:31:37.983057+00:00",
+  "sourceAttribution": "CREDITS.md (project root), copied into this directory",
+  "encoder": "ffmpeg libopus",
+  "files": [
+    {
+      "source": "assets/audio/music/boss-ghostpocalypse-master.mp3",
+      "sourceSha256": "8ffd34adb23746c38085bbb72440c99be389c91ef7f63cb82e2a7d427af0fa3b",
+      "sourceMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "119.304000",
+            "bit_rate": "320000"
+          }
+        ],
+        "format": {
+          "duration": "119.304000",
+          "size": "4774395",
+          "bit_rate": "320149"
+        }
+      },
+      "output": "assets/audio/optimized/boss-ghostpocalypse-master.ogg",
+      "outputSha256": "6cdafa12ad4c4fc69a50375c679aca8f3224b0c93208d77107120308ebec9147",
+      "outputMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "opus",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "119.310500"
+          }
+        ],
+        "format": {
+          "duration": "119.310500",
+          "size": "1985156",
+          "bit_rate": "133108"
+        }
+      },
+      "targetOpusBitrateKbps": 128,
+      "durationDeltaSeconds": 0.0065,
+      "fullDecodeCheck": "passed",
+      "originalUnchanged": true
+    },
+    {
+      "source": "assets/audio/music/calaca-danse-macabre.mp3",
+      "sourceSha256": "783bf8f40dc8c9cc4382594017831d0c435cfcbed6b7f64ef1959ab4d839371c",
+      "sourceMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "44100",
+            "channels": 2,
+            "duration": "406.204100",
+            "bit_rate": "320000"
+          }
+        ],
+        "format": {
+          "duration": "406.204100",
+          "size": "16341156",
+          "bit_rate": "321831"
+        }
+      },
+      "output": "assets/audio/optimized/calaca-danse-macabre.ogg",
+      "outputSha256": "9e64d51499524e6c08a59f4f947893d962f2d930b05cc0bc94ff27d2871abdf2",
+      "outputMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "opus",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "406.210583"
+          }
+        ],
+        "format": {
+          "duration": "406.210583",
+          "size": "7080377",
+          "bit_rate": "139442"
+        }
+      },
+      "targetOpusBitrateKbps": 128,
+      "durationDeltaSeconds": 0.006483,
+      "fullDecodeCheck": "passed",
+      "originalUnchanged": true
+    },
+    {
+      "source": "assets/audio/music/combat-zombie-chase.mp3",
+      "sourceSha256": "6c021c136816ea6874b651bce896a85d2ffd5bc3ff98352c49e7094a71b22ea4",
+      "sourceMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "44100",
+            "channels": 2,
+            "duration": "143.464500",
+            "bit_rate": "320000"
+          }
+        ],
+        "format": {
+          "duration": "143.464500",
+          "size": "5847232",
+          "bit_rate": "326058"
+        }
+      },
+      "output": "assets/audio/optimized/combat-zombie-chase.ogg",
+      "outputSha256": "d837fb121d70ce506bc4063d06a97a4144764de364e5f862ec93f86a56d01eae",
+      "outputMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "opus",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "143.471000"
+          }
+        ],
+        "format": {
+          "duration": "143.471000",
+          "size": "2476316",
+          "bit_rate": "138080"
+        }
+      },
+      "targetOpusBitrateKbps": 128,
+      "durationDeltaSeconds": 0.0065,
+      "fullDecodeCheck": "passed",
+      "originalUnchanged": true
+    },
+    {
+      "source": "assets/audio/music/explore-gathering-darkness.mp3",
+      "sourceSha256": "62d9f8a01262f351a7f02c32fae217a9cb32dd5aa1fc85c0bcb8c325a2663970",
+      "sourceMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "44100",
+            "channels": 2,
+            "duration": "264.960000",
+            "bit_rate": "320000"
+          }
+        ],
+        "format": {
+          "duration": "264.960000",
+          "size": "10600574",
+          "bit_rate": "320065"
+        }
+      },
+      "output": "assets/audio/optimized/explore-gathering-darkness.ogg",
+      "outputSha256": "b23ba0811b35ee9fed77ca7f8e535f4e945f7a1a2cda1016fe59870487a7c0fc",
+      "outputMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "opus",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "264.966500"
+          }
+        ],
+        "format": {
+          "duration": "264.966500",
+          "size": "3136511",
+          "bit_rate": "94699"
+        }
+      },
+      "targetOpusBitrateKbps": 96,
+      "durationDeltaSeconds": 0.0065,
+      "fullDecodeCheck": "passed",
+      "originalUnchanged": true
+    },
+    {
+      "source": "assets/audio/music/explore-night-of-chaos.mp3",
+      "sourceSha256": "f485f167190714de2347235f9e088e6257316e7ab77db4c30fe85268327f1ae6",
+      "sourceMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "44100",
+            "channels": 2,
+            "duration": "210.076750",
+            "bit_rate": "320000"
+          }
+        ],
+        "format": {
+          "duration": "210.076750",
+          "size": "8405279",
+          "bit_rate": "320084"
+        }
+      },
+      "output": "assets/audio/optimized/explore-night-of-chaos.ogg",
+      "outputSha256": "6da3ee98ee03142635c10e521af882f794155093e65b94736d42392563be0e67",
+      "outputMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "opus",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "210.083250"
+          }
+        ],
+        "format": {
+          "duration": "210.083250",
+          "size": "2507638",
+          "bit_rate": "95491"
+        }
+      },
+      "targetOpusBitrateKbps": 96,
+      "durationDeltaSeconds": 0.0065,
+      "fullDecodeCheck": "passed",
+      "originalUnchanged": true
+    },
+    {
+      "source": "assets/audio/music/hub-ossuary-a-beginning.mp3",
+      "sourceSha256": "2c3140481edd0c6ab5ff21b46198a97755822e74e5fd0c78f2e7b456cece3cf8",
+      "sourceMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "44100",
+            "channels": 2,
+            "duration": "188.055531",
+            "bit_rate": "256000"
+          }
+        ],
+        "format": {
+          "duration": "188.055531",
+          "size": "6020064",
+          "bit_rate": "256097"
+        }
+      },
+      "output": "assets/audio/optimized/hub-ossuary-a-beginning.ogg",
+      "outputSha256": "d4eb3a006abc0886db61431bcd6b3bdd1788c71e6ee697ea0aae80e79dd6b4cd",
+      "outputMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "opus",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "188.062021"
+          }
+        ],
+        "format": {
+          "duration": "188.062021",
+          "size": "2425683",
+          "bit_rate": "103186"
+        }
+      },
+      "targetOpusBitrateKbps": 96,
+      "durationDeltaSeconds": 0.00649,
+      "fullDecodeCheck": "passed",
+      "originalUnchanged": true
+    },
+    {
+      "source": "assets/audio/music/scare-gateway-to-hell.mp3",
+      "sourceSha256": "0c8c68a9a1ee7093089639f0de4a20bc143ebb739dc3b0fa150d2bb5635fdd79",
+      "sourceMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "44100",
+            "channels": 2,
+            "duration": "351.738750",
+            "bit_rate": "160000"
+          }
+        ],
+        "format": {
+          "duration": "351.738750",
+          "size": "7037008",
+          "bit_rate": "160050"
+        }
+      },
+      "output": "assets/audio/optimized/scare-gateway-to-hell.ogg",
+      "outputSha256": "c7f9c151481c7d26c5cbfe34fed841d48e989a349b6aebbac433baf26eeb1443",
+      "outputMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "opus",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "351.745292"
+          }
+        ],
+        "format": {
+          "duration": "351.745292",
+          "size": "3964843",
+          "bit_rate": "90175"
+        }
+      },
+      "targetOpusBitrateKbps": 96,
+      "durationDeltaSeconds": 0.006542,
+      "fullDecodeCheck": "passed",
+      "originalUnchanged": true
+    },
+    {
+      "source": "assets/audio/music/tension-right-behind-you.mp3",
+      "sourceSha256": "d858a6a3a493d139ebf9704e72550d38f49a48bc96fc4b68af711effa2204d75",
+      "sourceMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "262.464000",
+            "bit_rate": "320000"
+          }
+        ],
+        "format": {
+          "duration": "262.464000",
+          "size": "10500669",
+          "bit_rate": "320064"
+        }
+      },
+      "output": "assets/audio/optimized/tension-right-behind-you.ogg",
+      "outputSha256": "18e994828d5716c16e68ad75a7e5fd06ee9d50b1b4427b5428482b0bb2a972e8",
+      "outputMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "opus",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "262.470500"
+          }
+        ],
+        "format": {
+          "duration": "262.470500",
+          "size": "3181557",
+          "bit_rate": "96972"
+        }
+      },
+      "targetOpusBitrateKbps": 96,
+      "durationDeltaSeconds": 0.0065,
+      "fullDecodeCheck": "passed",
+      "originalUnchanged": true
+    },
+    {
+      "source": "assets/audio/music/title-ghostpocalypse-departure.mp3",
+      "sourceSha256": "8c9da89cba76ff6cd9c39e6b93c52a09e8c1fe8c77a3e64c73661e10b491cb7c",
+      "sourceMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "77.568000",
+            "bit_rate": "320000"
+          }
+        ],
+        "format": {
+          "duration": "77.568000",
+          "size": "3104958",
+          "bit_rate": "320230"
+        }
+      },
+      "output": "assets/audio/optimized/title-ghostpocalypse-departure.ogg",
+      "outputSha256": "37fffeaa715d924ec7d7cab5639340b9f5417c1885309dc82ad2e827f7276d25",
+      "outputMetadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "opus",
+            "sample_rate": "48000",
+            "channels": 2,
+            "duration": "77.574500"
+          }
+        ],
+        "format": {
+          "duration": "77.574500",
+          "size": "1139406",
+          "bit_rate": "117503"
+        }
+      },
+      "targetOpusBitrateKbps": 96,
+      "durationDeltaSeconds": 0.0065,
+      "fullDecodeCheck": "passed",
+      "originalUnchanged": true
+    }
+  ],
+  "totalSourceBytes": 72631335,
+  "totalOutputBytes": 27897487,
+  "limitations": [
+    "No browser playback or game audio integration was tested.",
+    "Attribution copied from existing project record; no new third-party music added.",
+    "No Hanuman Chalisa source recording was present in the scoped source inventory."
+  ]
+}
