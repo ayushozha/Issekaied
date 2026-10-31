@@ -52,7 +52,6 @@ export interface Director {
 
 const INVOCATION_FLUSH_MS = 2000;
 const KILL_TALK_COOLDOWN_MS = 20_000;
-const JOIN_GREETING_DELAY_MS = 1500;
 const MAX_PANTHEON_CONTEXT = 12;
 
 export const hydrationFrom = (mem: GhostMemory): MemoryHydration => {
@@ -88,14 +87,6 @@ export function createDirector(deps: DirectorDeps): Director {
     counters.errors += 1;
     lastError = `${where}: ${(err as Error)?.message ?? String(err)}`.slice(0, 200);
     log(`director ${lastError}`);
-  };
-
-  const later = (ms: number, fn: () => void) => {
-    const t = setTimeout(() => {
-      timers.delete(t);
-      fn();
-    }, ms);
-    timers.add(t);
   };
 
   const episodeFacts = async (enemy: RoomEnemy, player: RoomPlayer, mem: GhostMemory | null): Promise<MindFacts['episodes']> => {
@@ -147,7 +138,7 @@ export function createDirector(deps: DirectorDeps): Director {
     for (const room of deps.rooms.values()) {
       for (const e of room.enemies) {
         if (e.id === w.ghostId || e.state === 'banished' || e.gated) continue;
-        adopt(room, e, w.suggestedStrategy, `${w.ghostName}'s warning via ${via === 'relay' ? 'Agent Relay' : 'local bus'}`, w.eventId);
+        adopt(room, e, w.suggestedStrategy, `${w.ghostName}'s warning via ${via === 'relay' ? 'Agent Relay' : 'local bus'}`, w.eventId, false); // silent: 49 notices per banishment would be spam
         if (!spoke) {
           spoke = true;
           speak(room, e, 'warning', { hunterName: w.hunterName, power: w.power, warnedBy: w.ghostName, episodes: [{ eventId: w.eventId, summary: `${w.ghostName} banished by ${w.hunterName} through ${DEITY_NAME[w.power]}` }], allowedStrategies: [w.suggestedStrategy] }).catch(fail('speak.warning'));
@@ -168,29 +159,9 @@ export function createDirector(deps: DirectorDeps): Director {
 
   // ---- signal handlers ---------------------------------------------------------------------------
 
-  const onJoin = (room: Room, player: RoomPlayer) => {
+  /** Joins only record identity; deity context stays in memory/lore for The Source and is no longer broadcast. */
+  const onJoin = (_room: Room, player: RoomPlayer) => {
     deps.eventLog.upsertPlayer({ id: player.id, name: player.name });
-    later(JOIN_GREETING_DELAY_MS, () => {
-      void (async () => {
-        if (!room.players.get(player.id)?.connected) return;
-        for (const deity of ['shiva', 'vishnu'] as PowerId[]) {
-          const ctx = await deps.memory.deity(deity).context(player.id);
-          if (ctx.known) {
-            const res = await deps.minds.respond({
-              npcId: deity,
-              npcName: DEITY_NAME[deity],
-              trigger: 'deity_join',
-              roomId: room.id,
-              facts: { hunterName: player.name, power: deity, memorySummary: ctx.summary, episodes: ctx.citedEventIds.map((id) => ({ eventId: id, summary: 'earlier invocation' })), allowedStrategies: ['chase'], extra: pantheonContext.length ? `Pantheon context: ${pantheonContext.slice(-4).join(' ')}` : undefined },
-            });
-            room.notice(deity, `${DEITY_NAME[deity]}: ${res.dialogue}`);
-            return;
-          }
-        }
-        const shiva = await deps.memory.deity('shiva').snapshot();
-        if (shiva.invocations > 0) room.notice('shiva', `Shiva: ${(await deps.memory.deity('shiva').context()).summary} You arrive in a world that remembers.`);
-      })().catch(fail('join'));
-    });
   };
 
   const onInvocation = (room: Room, s: Extract<RoomSignal, { type: 'invocation' }>) => {

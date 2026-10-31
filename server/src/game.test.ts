@@ -62,6 +62,7 @@ beforeAll(() => {
     // Stand-in for the Source module: it only ever sees /api/source/* requests and may decline with null.
     source: { handle: async (req) => (new URL(req.url).pathname === '/api/source/session' ? Response.json({ delegated: true, method: req.method }) : null) },
     onJoin: (info) => joins.push(info),
+    leaderboard: async () => ({ mode: 'local-jsonl', players: [{ name: 'Ayla', kills: 2, deaths: 0, joins: 1, timeSeconds: 12 }], updatedAt: 1 }),
   });
   events.subscribe((roomId, ev) => game.publish(roomId, ev));
   base = `127.0.0.1:${game.port}`;
@@ -104,7 +105,9 @@ describe('websocket room', () => {
     expect(wa.selfId).toBe(playerIdFor(KEY_A));
     expect(wb.selfId).toBe(playerIdFor(KEY_B));
     expect(wa.tickRate).toBe(20);
-    expect(wa.snapshot.enemies.map((e) => e.id).sort()).toEqual(['morrow', 'nix', 'raksha', 'vesper']);
+    expect(wa.snapshot.enemies).toHaveLength(50);
+    for (const id of ['morrow', 'nix', 'raksha', 'vesper']) expect(wa.snapshot.enemies.some((e) => e.id === id)).toBe(true);
+    expect(wa.snapshot.enemies.find((e) => e.id === 'ghost-01')?.baseId).toBe('morrow');
     expect(wa.snapshot.players.find((p) => p.id === wa.selfId)!.name).toBe('Ayla b');
 
     const both = (m: ServerMessage) => m.type === 'snapshot' && m.snapshot.players.length === 2;
@@ -181,6 +184,9 @@ describe('websocket room', () => {
     expect(await session.json()).toEqual({ delegated: true, method: 'POST' });
     expect((await fetch(`http://${base}/api/source/other`, { method: 'POST' })).status).toBe(404);
     expect((await fetch(`http://${base}/health`)).status).toBe(200);
+    const board = await (await fetch(`http://${base}/api/leaderboard`)).json();
+    expect(board).toEqual({ mode: 'local-jsonl', players: [{ name: 'Ayla', kills: 2, deaths: 0, joins: 1, timeSeconds: 12 }], updatedAt: 1 });
+    expect(JSON.stringify(board)).not.toContain('playerId');
 
     c.ws.close();
     await c.closed;

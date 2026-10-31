@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { powerForEnemyLevel, type CombatAction, type Vec3 } from '../../shared/protocol';
 import { counterStrategy } from '../../actor/src/memory.ts';
-import { HEAL, IDLE_INACTIVE_MS, PLAYER_MAX_HP, POWERS, PRIMARY, STALE_INPUT_MS, WARD, enemyMaxHp, returnDelayMs } from './combat.ts';
+import { HEAL, IDLE_INACTIVE_MS, INCANTATION_HP_COST, PLAYER_MAX_HP, POWERS, PRIMARY, STALE_INPUT_MS, WARD, enemyMaxHp, returnDelayMs } from './combat.ts';
 import type { ServerEvent } from './events.ts';
 import { Room, playerIdFor, type RoomEnemy, type RoomPlayer, type RoomSignal } from './room.ts';
 import { ADVENTURE, MELEE_STOP, WORLD, dist2d, inSafeZone, xz } from './world.ts';
@@ -125,8 +125,10 @@ describe('deliberate movement', () => {
   test('stale input stops the hunter and a silent client becomes inactive', () => {
     const { room, join, input, tick } = makeRoom();
     const a = join(KEY_A, 'Ayla');
+    expect(STALE_INPUT_MS).toBeLessThanOrEqual(220);
     input(a, 0, 1, { sprint: true });
     tick(Math.ceil(STALE_INPUT_MS / 50) + 1);
+    expect(a.move.sprint).toBe(false);
     const frozenZ = a.z;
     tick(20);
     expect(a.z).toBe(frozenZ); // no walking without fresh input
@@ -254,6 +256,53 @@ describe('explicit actions', () => {
   });
 });
 
+describe('fifty haunts and the Q cost', () => {
+  test('exactly 50 stable haunts: the four quest haunts unchanged, 46 outer ones outside the core, inside bounds, non-overlapping, all beyond the safe gate', () => {
+    const { room } = makeRoom();
+    expect(room.enemies).toHaveLength(50);
+    expect(new Set(room.enemies.map((e) => e.id)).size).toBe(50);
+    expect(room.enemies.slice(0, 4).map((e) => [e.id, e.level, e.home])).toEqual(WORLD.enemySpawns.map((s) => [s.id, s.level, { x: s.position[0], z: s.position[2] }]));
+    const outer = room.enemies.slice(4);
+    expect(outer.map((e) => e.id).slice(0, 7)).toEqual(['ghost-01', 'ghoul-02', 'goblin-03', 'orc-04', 'beast-05', 'rakshasa-06', 'ghost-07']);
+    for (const e of outer) {
+      expect(Math.hypot(e.home.x, e.home.z)).toBeGreaterThan(32);
+      expect(Math.abs(e.home.x)).toBeLessThan(64 - ADVENTURE.leashRadius / 2);
+      expect(e.level).toBeGreaterThanOrEqual(1);
+      expect(e.level).toBeLessThanOrEqual(9);
+      expect(dist2d(e.home, xz(WORLD.spawn))).toBeGreaterThan(ADVENTURE.safeSpawnRadius + ADVENTURE.aggroRadius); // a haunt at home can never aggro the gate
+    }
+    for (let i = 0; i < room.enemies.length; i++) for (let j = i + 1; j < room.enemies.length; j++) expect(dist2d(room.enemies[i].home, room.enemies[j].home)).toBeGreaterThan(3);
+    const snap = room.snapshot();
+    expect(snap.enemies).toHaveLength(50);
+    expect(snap.enemies.find((e) => e.id === 'ghost-01')?.baseId).toBe('morrow');
+    expect(snap.enemies.find((e) => e.id === 'rakshasa-06')?.baseId).toBe('raksha');
+    expect(snap.enemies.find((e) => e.id === 'vesper')?.baseId).toBe('vesper');
+    expect(room.adventureState().targetId).toBe('morrow');
+  });
+
+  test('Q costs 25% max HP, is refused when unaffordable, and never kills the caster', () => {
+    const { room, clock, join, input, cast, events } = makeRoom();
+    const a = join(KEY_A, 'Ayla');
+    a.x = room.enemy('morrow')!.x;
+    a.z = room.enemy('morrow')!.z - 5;
+    input(a);
+    cast(a, 'incantation');
+    expect(a.hp).toBe(PLAYER_MAX_HP - INCANTATION_HP_COST);
+    expect(events.find((e) => e.kind === 'cast')?.hpCost).toBe(INCANTATION_HP_COST);
+    a.hp = INCANTATION_HP_COST; // exactly the cost: would leave 0 HP
+    const casts = events.filter((e) => e.kind === 'cast').length;
+    cast(a, 'incantation');
+    expect(a.hp).toBe(INCANTATION_HP_COST);
+    expect(events.filter((e) => e.kind === 'cast').length).toBe(casts);
+    expect(a.cooldowns.ganesha).toBeLessThanOrEqual(room.snapshot().serverTime + POWERS.ganesha.cooldownMs); // no cooldown was charged for the refusal
+    a.hp = INCANTATION_HP_COST + 1;
+    clock.advance(200);
+    cast(a, 'primary'); // free actions still work
+    expect(events.filter((e) => e.kind === 'cast').length).toBe(casts + 1);
+    expect(a.hp).toBe(INCANTATION_HP_COST + 1);
+  });
+});
+
 describe('local encounters', () => {
   test('idle hunters at the safe gate are never targeted, attacked or moved', () => {
     const { room, join, idle, events } = makeRoom();
@@ -365,7 +414,7 @@ describe('cooperative progression', () => {
       tick();
     }
     expect(raksha.targetId).toBeNull();
-    expect(a.hp).toBe(PLAYER_MAX_HP);
+    expect(a.hp).toBe(PLAYER_MAX_HP - INCANTATION_HP_COST); // only the Q cost, no boss damage
 
     expect(banishWith(a, room.enemy('morrow')!)).toBe(true);
     expect(room.adventureState()).toMatchObject({ stage: 1, sigils: 1, targetId: 'nix' });

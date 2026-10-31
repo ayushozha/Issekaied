@@ -125,7 +125,7 @@ describe('director (offline modes)', () => {
     // Delivered hivemind warning changed the live recipients (the gated boss is left alone).
     for (const id of ['nix', 'vesper']) expect(room.enemy(id)!.strategy).toBe(counterStrategy('ganesha'));
     expect(room.enemy('raksha')!.strategy).toBe('chase');
-    expect(events.some((e) => e.kind === 'power' && e.text?.includes('changes tactics') && e.text.includes('warning'))).toBe(true);
+    expect(events.some((e) => e.kind === 'power' && e.text?.includes('changes tactics') && e.text.includes('warning'))).toBe(false); // silent adoption, no 49-notice spam
     expect(events.some((e) => e.kind === 'whisper' && e.fromId === 'morrow')).toBe(true);
     expect(events.some((e) => e.kind === 'whisper' && ['nix', 'vesper'].includes(e.fromId))).toBe(true);
     expect(events.every((e) => e.audioUrl === undefined)).toBe(true); // voice disabled: no fake audio URLs

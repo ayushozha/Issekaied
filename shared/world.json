@@ -2,10 +2,18 @@
   "version": 1,
   "name": "Bellgrave",
   "bounds": {
-    "minX": -32,
-    "maxX": 32,
-    "minZ": -32,
-    "maxZ": 32
+    "minX": -64,
+    "maxX": 64,
+    "minZ": -64,
+    "maxZ": 64
+  },
+  "coreRadius": 32,
+  "outerEnemies": {
+    "count": 46,
+    "idPattern": "<species>-<two-digit-index>",
+    "speciesCycle": ["ghost", "ghoul", "goblin", "orc", "beast", "rakshasa"],
+    "rings": [44, 56],
+    "baseIdBySpecies": { "ghost": "morrow", "ghoul": "nix", "goblin": "goblin", "orc": "orc", "beast": "beast", "rakshasa": "raksha" }
   },
   "spawn": [
     0,
@@ -96,7 +104,7 @@
     }
   ],
   "adventure": {
-    "safeSpawnRadius": 7,
+    "safeSpawnRadius": 9,
     "aggroRadius": 8,
     "leashRadius": 14,
     "shrine": {

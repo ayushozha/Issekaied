@@ -12,6 +12,7 @@ import { createSourceService, type SourceService } from './integrations/source.t
 import { createVoice } from './integrations/voice.ts';
 import { resolveSourcePlayer } from './game.ts';
 import { Room, type RoomSignal } from './room.ts';
+import { sanitizeName } from './validate.ts';
 
 const startedAt = Date.now();
 const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`);
@@ -89,6 +90,20 @@ const freestyleHosting = (): Record<string, unknown> => {
     : { mode: 'external-host-unknown', api: 'vps', actorHost: hostname, role: 'actor host is not a style.dev domain' };
 };
 
+/** Public top 10: names only (sanitized, ≤ 36 chars), never ids or keys; cached briefly. */
+let leaderboardCache: { at: number; body: unknown } | null = null;
+const publicLeaderboard = async () => {
+  if (leaderboardCache && Date.now() - leaderboardCache.at < 5000) return leaderboardCache.body;
+  const rows = await eventLog.leaderboard(10).catch(() => []);
+  const body = {
+    mode: eventLog.mode,
+    players: rows.map((r) => ({ name: sanitizeName(r.name).slice(0, 36), kills: r.kills, deaths: r.deaths, joins: r.joins, timeSeconds: r.timeSeconds })),
+    updatedAt: Date.now(),
+  };
+  leaderboardCache = { at: Date.now(), body };
+  return body;
+};
+
 const health = () => ({
   ok: true,
   service: pkg.name,
@@ -150,9 +165,13 @@ const game = startGameServer({
   source: source ?? undefined,
   // Socket-bound join fact: fires only after a validated join on an open socket, with the stable public id.
   onJoin: ({ roomId, playerId, name }) => {
+    eventLog.bookkeeping(roomId, 'join', playerId, ids.next());
     if (!source) return;
     source.record({ eventId: ids.next(), kind: 'join', at: Date.now(), roomId, playerId, playerName: name }).catch((err) => log(`source.record join: ${(err as Error).message}`));
   },
+  // Elapsed server time on an open socket, chunked; never a client-claimed number.
+  onSession: ({ roomId, playerId, durationMs }) => eventLog.bookkeeping(roomId, 'session', playerId, ids.next(), durationMs),
+  leaderboard: publicLeaderboard,
   log,
 });
 events.subscribe((roomId, ev) => game.publish(roomId, ev));

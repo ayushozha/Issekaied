@@ -29,8 +29,38 @@ export interface WorldDef {
 }
 
 /** Shared world definition (coordinator-owned JSON). The client collides against the same boxes. */
-export const WORLD = worldJson as unknown as WorldDef;
+export const WORLD = worldJson as unknown as WorldDef & { coreRadius?: number; outerEnemies?: { count: number; speciesCycle: Species[]; rings: number[]; baseIdBySpecies: Record<string, string> } };
 export const ADVENTURE = WORLD.adventure;
+
+const OUTER = WORLD.outerEnemies ?? { count: 46, speciesCycle: ['ghost', 'ghoul', 'goblin', 'orc', 'beast', 'rakshasa'] as Species[], rings: [44, 56], baseIdBySpecies: {} };
+const OUTER_LEVEL: Record<Species, number> = { ghost: 1, ghoul: 3, goblin: 3, orc: 5, beast: 6, rakshasa: 8 };
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Visual family for a haunt: the originals use their own id, outer haunts reuse an existing family. */
+export const baseIdFor = (id: string, species: Species): string =>
+  WORLD.enemySpawns.some((s) => s.id === id) ? id : OUTER.baseIdBySpecies[species] ?? species;
+
+/**
+ * The 46 stable outer haunts: `<species>-NN`, NN = 01..46, species cycling through the six kinds, homes on
+ * two evenly spaced rings outside the 32 m core and inside the ±64 bounds. Deterministic, never random.
+ */
+export function outerSpawns(): EnemySpawn[] {
+  const out: EnemySpawn[] = [];
+  const perRing = Math.ceil(OUTER.count / OUTER.rings.length);
+  for (let i = 1; i <= OUTER.count; i++) {
+    const species = OUTER.speciesCycle[(i - 1) % OUTER.speciesCycle.length];
+    const ring = Math.floor((i - 1) / perRing);
+    const slot = (i - 1) % perRing;
+    const radius = OUTER.rings[ring] ?? OUTER.rings[OUTER.rings.length - 1];
+    const angle = (slot / perRing) * Math.PI * 2 + ring * (Math.PI / perRing);
+    const nn = String(i).padStart(2, '0');
+    out.push({ id: `${species}-${nn}`, name: `${cap(species)} ${nn}`, species, level: OUTER_LEVEL[species] + (i % 2), position: [Math.round(Math.cos(angle) * radius * 10) / 10, 1.2, Math.round(Math.sin(angle) * radius * 10) / 10] });
+  }
+  return out;
+}
+
+/** All 50 haunts: the four quest haunts first (ids, homes and progression preserved), then the outer ring. */
+export const ENEMY_SPAWNS: EnemySpawn[] = [...WORLD.enemySpawns, ...outerSpawns()];
 
 export const PLAYER_RADIUS = WORLD.playerRadius;
 export const ENEMY_RADIUS = 0.5;
