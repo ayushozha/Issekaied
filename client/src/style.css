@@ -29,6 +29,14 @@ html, body { margin: 0; height: 100%; background: var(--fog); overflow: hidden; 
 
 .vitals { left: 18px; top: 18px; width: 240px; }
 .vitals .row { margin-top: 6px; }
+.leaderboard { left: 18px; top: 132px; width: 240px; }
+.leaderboard-heading, .leaderboard li { display: flex; justify-content: space-between; gap: 10px; }
+.leaderboard-heading { color: var(--muted); font-size: 10px; }
+.leaderboard ol { padding: 0; margin: 8px 0; list-style: none; }
+.leaderboard li { padding: 5px 0; border-top: 1px solid rgba(214,178,96,.13); font-size: 12px; }
+.leaderboard li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leaderboard li strong { color: var(--gold); font-variant-numeric: tabular-nums; }
+.leaderboard .small { font-size: 10px; }
 .chip { font-size: 11px; color: #d7ecff; border: 1px solid rgba(159, 214, 232, 0.5); border-radius: 3px; padding: 1px 6px; }
 
 .objective { right: 18px; top: 18px; width: 250px; }
@@ -140,6 +148,10 @@ html, body { margin: 0; height: 100%; background: var(--fog); overflow: hidden; 
     linear-gradient(90deg, rgba(4, 6, 12, 0.82) 0%, rgba(4, 6, 12, 0.5) 38%, rgba(4, 6, 12, 0.05) 70%),
     url("/generated/ui/title-background.png") center / cover no-repeat, var(--fog);
 }
+.screens.titled::before { content: ''; position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 35px rgba(27, 3, 9, .68); background: linear-gradient(0deg, rgba(65,10,4,.4), transparent 24%); }
+.screens.titled::after { content: ''; position: fixed; top: 0; right: 0; width: 200px; height: 180px; pointer-events: none; opacity: .45; background: repeating-radial-gradient(ellipse at 100% 0, transparent 0 25px, rgba(222,204,168,.55) 26px 27px, transparent 28px 35px), repeating-conic-gradient(from 180deg at 100% 0, transparent 0deg 13deg, rgba(222,204,168,.5) 14deg 14.5deg, transparent 15deg 25deg); mask-image: linear-gradient(225deg,#000,transparent 80%); }
+.screens.titled .brand, .screens.titled .screen { position: relative; z-index: 1; }
+.screens.titled .tagline::after { content: 'HALLOWEEN · BELLGRAVE'; display: block; font-family: system-ui,sans-serif; font-size: 10px; letter-spacing: .24em; color: #edab61; margin-top: 14px; }
 .brand h1 {
   margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 500; line-height: 1;
   font-size: clamp(44px, 8vw, 96px); letter-spacing: 0.06em; color: #e9c877;
@@ -204,6 +216,7 @@ html, body { margin: 0; height: 100%; background: var(--fog); overflow: hidden; 
 .actions-row .btn { margin-top: 0; }
 
 @media (max-width: 720px) {
+  .leaderboard { top: 124px; width: 200px; }
   .objective { display: none; }
   .vitals { width: 200px; }
   .whispers { width: 60vw; }

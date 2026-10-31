@@ -1,0 +1,7 @@
+# Monster sprites
+
+`monsters-atlas.png` is a 2172×724 RGBA image: three equal square cells contain the goblin, orc and antlered beast. Alpha analysis confirmed a range of 0–255. The built-in image-generation tool edited the project's `enemy-bestiary.png` design reference on October 31, 2026. These are illustrated sprites, not rigged meshes.
+
+Prompt:
+
+> Use the reference bestiary's goblin (top right), orc (bottom left), and beast (bottom middle) as the exact character-design reference. Create a clean game-ready TRANSPARENT RGBA sprite atlas containing ONLY THESE THREE full-body characters, in ONE horizontal row with THREE EQUAL WIDTH CELLS. LEFT THIRD goblin holding crooked lantern staff; CENTER THIRD powerful armored orc holding mace/shield; RIGHT THIRD antlered wolf beast. Face towards the camera in a menacing ready-to-attack pose, small three-quarter body angle. Keep the reference's detailed gothic Halloween dark-fantasy rendered style and gold lantern accents, silhouettes and costume design. Each character entirely inside its own one-third cell with at least 8% cell padding on all sides and visible feet. No overlap between cells. Absolutely no text, captions, floor, cast shadow, dividers, grid, background or scenery. True transparent alpha surrounding all three characters, including gaps between their limbs. Well-lit readable detailed characters; no dark rectangular backplates. The game will crop exactly three equal thirds horizontally, so keep each character centered inside its own cell.

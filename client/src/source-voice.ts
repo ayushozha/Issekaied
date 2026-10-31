@@ -67,7 +67,7 @@ export class SourceVoice {
    * session reconnects with the microphone. `firstTurn` is folded into the single opening response so the
    * introduction and the player's first question never race as two responses.
    */
-  async connect(withMic: boolean, firstTurn: string | null = null): Promise<boolean> {
+  async connect(withMic: boolean, firstTurn: string | null = null, introduce = true): Promise<boolean> {
     if (this.status === 'connecting') return false;
     if (this.live && (!withMic || this.hasMic)) return true;
     this.teardown('idle', '');
@@ -174,8 +174,10 @@ export class SourceVoice {
     window.clearTimeout(this.setupTimer);
     this.openedResolve = null;
     this.setStatus('live', this.hasMic ? 'live · hold V or the mic button to speak' : 'live · text only (no microphone)');
-    // One opening response: the introduction request, with the player's first question folded in if there was one.
-    this.sendUserText(firstTurn ? `${KICKOFF} Then answer this: ${firstTurn}` : KICKOFF, false);
+    // At most one opening response. The birth introduction only when asked for (first time for this guest);
+    // otherwise only the player's actual question, and a bare reconnect/upgrade waits for spoken input.
+    const opening = introduce ? (firstTurn ? `${KICKOFF} Then answer this: ${firstTurn}` : KICKOFF) : firstTurn;
+    if (opening) this.sendUserText(opening, false);
     return true;
   }
 

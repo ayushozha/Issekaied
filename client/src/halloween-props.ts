@@ -107,6 +107,9 @@ async function dress(scene: Scene): Promise<void> {
       [-8.4, sz - 2.6, facing(-8.4, sz - 2.6, 0, sz - 2.6), 'sit'],
       [-18.6, mz + 2.4, facing(-18.6, mz + 2.4, mx, mz), 'sit'],
       [rx + 4.2, rz - 3.4, facing(rx + 4.2, rz - 3.4, rx, rz), 'idle'],
+      // Pumpkin Graveyard (authored west zone): two keepers slumped before the giant pumpkin.
+      [-38.6, -3.2, facing(-38.6, -3.2, -43, -7), 'sit'],
+      [-39.2, -11.4, facing(-39.2, -11.4, -43, -7), 'sit'],
     ];
     for (const [x, z, yaw, pose] of spots) placeSkeleton(skel, root, x, z, yaw, pose);
   }
@@ -276,6 +279,10 @@ function buildWebs(scene: Scene, root: TransformNode): { freeze(): void } {
   // A web strung across the portal-side fence corner, out of the portal's sightline.
   const b = WORLD.bounds;
   web(b.maxX - 1.1, 1.3, b.minZ + 1.1, Math.PI / 4, 1.6, true);
+  // Pumpkin Graveyard: webs strung near the giant pumpkin and on a ruined chapel arcade pillar.
+  web(-40.2, 2.6, -2.4, -Math.PI / 5, 2.2, true);
+  web(-40.4, 2.2, -12, Math.PI / 5, 1.8, false);
+  web(-18.4, 3.4, 14.4, Math.PI / 2, 1.8, true);
 
   return {
     freeze() {
