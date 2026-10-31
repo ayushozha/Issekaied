@@ -6,7 +6,7 @@ A first-person Halloween adventure built around **stateful characters** and **ag
 
 *Project key art. Gameplay uses a 3D courtyard, illustrated ghost impostors and live interface elements.*
 
-[Play the demo](https://issekaied.ayushojha.com) · [Watch the two-minute video](https://issekaied.ayushojha.com/video/Issekaied-2min-submission.mp4) · [Demo script](docs/DEMO-SCRIPT-2MIN.md) · [Verification notes](docs/DEMO.md) · [Asset credits](docs/MAP-ASSETS.md)
+[Play the demo](https://issekaied.ayushojha.com) · [Watch the revised two-minute video](https://issekaied.ayushojha.com/video/Issekaied-2min-submission-v2.mp4) · [Demo script](docs/DEMO-SCRIPT-2MIN.md) · [Verification notes](docs/DEMO.md) · [Asset credits](docs/MAP-ASSETS.md)
 
 **Stateful Apps:** Terse actors preserve each ghost's history, divine context and the Source ledger. **Agent-to-Agent Communication:** Agent Relay delivers warnings and outcomes that other characters can act on.
 

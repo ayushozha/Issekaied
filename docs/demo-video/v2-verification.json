@@ -1,0 +1,57 @@
+{
+  "file": "assets/video/Issekaied-2min-submission-v2.mp4",
+  "sha256": "3603e09c8210b35d1167477b9e1af54339a2a751a21d1ca5c9d33da29fc7a40e",
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1280,
+        "height": 720,
+        "r_frame_rate": "30/1"
+      },
+      {
+        "codec_name": "aac",
+        "sample_rate": "48000",
+        "r_frame_rate": "0/0"
+      }
+    ],
+    "format": {
+      "duration": "120.000000",
+      "size": "12374005"
+    }
+  },
+  "fullDecode": "passed",
+  "preserved": [
+    {
+      "file": "assets/video/Issekaied-2min-submission.mp4",
+      "sha256": "de924dc9ababae07a130a51945ca18dbb8bb97373068bb968159872642bc0fcc",
+      "unchanged": true
+    },
+    {
+      "file": "output/submission-voice/narration-final.wav",
+      "sha256": "86cf019181a63ee1acc94ae6c5cdcad2c4518a26ac6912c1f4979189bcf1ca49",
+      "unchanged": true
+    },
+    {
+      "file": "docs/DEMO-SCRIPT-2MIN.md",
+      "sha256": "e2fc3f97b57a72a78e6e08f184cc12bf6f1ee5bdc0457047fdb99a8fa8d0e328",
+      "unchanged": true
+    }
+  ],
+  "sourceAudio": {
+    "input": "typed in the actual game",
+    "output": "captured OpenAI Realtime audio",
+    "startSeconds": 64.6,
+    "endSeconds": 73.1
+  },
+  "reviewedMoments": {
+    "14": "banishment",
+    "16": "remembered return",
+    "39": "actual Morrow and Nix dialogue crops",
+    "65": "exact Source audio transcript; no mismatched objective inset",
+    "79": "real Supabase leaderboard",
+    "104.5": "actual 100 to 75 vitality change"
+  }
+}

@@ -1,6 +1,12 @@
 # Issekaied submission video
 
-[Watch the final video](https://issekaied.ayushojha.com/video/Issekaied-2min-submission.mp4) · [Local video](../../assets/video/Issekaied-2min-submission.mp4) · [Script and shot list](../DEMO-SCRIPT-2MIN.md) · [Narration MP3](narration-2min.mp3) · [Narration WAV master](narration-master.wav) · [Play Issekaied](https://issekaied.ayushojha.com)
+[Watch the revised video](https://issekaied.ayushojha.com/video/Issekaied-2min-submission-v2.mp4) · [Local revised video](../../assets/video/Issekaied-2min-submission-v2.mp4) · [Original submission](https://issekaied.ayushojha.com/video/Issekaied-2min-submission.mp4) · [Script](../DEMO-SCRIPT-2MIN.md) · [Play Issekaied](https://issekaied.ayushojha.com)
+
+## Revised edit
+
+Claude authored the revised edit plan and renderer against the unchanged narration's word timestamps. The second cut places the banishment at “banish,” the remembered return at “returns,” the real leaderboard under the Supabase explanation, and the visible 100-to-75 vitality change under “quarter of your health.” New recordings show the authored map beyond the gate. Legible crops of actual dialogue and clearly presented evidence cards explain persistent state and agent communication.
+
+The original video, narration master and spoken script are unchanged. The Source segment uses the same genuine in-game audio with its exact transcript; it does not show a contradictory quest-state inset. [Revision checks](v2-verification.json) record the final format and preservation hashes.
 
 The finished cut is exactly **120.000 seconds**, 1280×720, 30 fps, H.264 video with AAC audio. Full FFmpeg decode passed. The two main track themes are stateful characters through Terse Durable Actors and agent-to-agent communication through Agent Relay. Freestyle, OpenAI, Mastra, Supabase and Superserve appear with their actual roles.
 
