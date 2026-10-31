@@ -1,7 +1,7 @@
-import { POWER_IDS, type EnemyState, type PlayerState, type PowerId } from '../../shared/protocol';
-import { CHANNELS, channelForLevel, type Channel } from './powers';
-import { STRATEGY_COLOR } from './entities';
+import { COMBAT_ACTIONS, type AdventureState, type CombatAction, type EnemyState, type PlayerState } from '../../shared/protocol';
+import { channelForLevel, type Channel } from './powers';
 import type { NetStatus } from './net';
+import { WORLD } from './world';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -9,52 +9,81 @@ const $ = <T extends HTMLElement>(id: string): T => {
   return el as T;
 };
 
+export type ConnectionPanel = 'hidden' | 'connecting' | 'retrying' | 'lost' | 'failed';
+
+export interface HudHandlers {
+  onRetry(): void;
+  onReturnToTitle(): void;
+  onRespawn(): void;
+  onDevPreview(): void;
+}
+
 /**
- * DOM overlay. Deliberately read-only about channels: the server picks the deity for each attack,
- * so there is nothing to select here, only readiness, the current target and the last invocation.
+ * Compact DOM overlay: vitality, objective/sigils, target line, five real action slots with authoritative
+ * cooldowns, an E prompt only when something is in reach, and two modal panels (connection, defeat).
+ * Nothing here selects a deity and nothing flashes the whole screen.
  */
 export class Hud {
   private readonly root = $('hud');
   private readonly status = $('status');
-  private readonly offline = $('offline');
+  private readonly previewBanner = $('preview-banner');
   private readonly target = $('target');
   private readonly targetName = $('target-name');
   private readonly targetChannel = $('target-channel');
   private readonly selfName = $('self-name');
   private readonly selfHp = $('self-hp');
-  private readonly selfHpText = $('self-hp-text');
-  private readonly invocationPortrait = $<HTMLImageElement>('invocation-portrait');
-  private readonly invocationName = $('invocation-name');
-  private readonly invocationCd = $('invocation-cd');
-  private readonly channels = $('channels');
-  private readonly players = $('players');
-  private readonly enemies = $('enemies');
+  private readonly wardChip = $('ward-chip');
+  private readonly objectiveText = $('objective-text');
+  private readonly sigils = $('sigils');
+  private readonly bossState = $('boss-state');
+  private readonly nextLine = $('next-line');
+  private readonly huntersLine = $('hunters-line');
   private readonly whispers = $('whispers');
+  private readonly interactPrompt = $('interact-prompt');
+  private readonly interactText = $('interact-text');
   private readonly cue = $('invoke-cue');
   private readonly cueImg = $<HTMLImageElement>('invoke-cue-img');
   private readonly cueText = $('invoke-cue-text');
-  private readonly death = $('death');
-  private readonly flashEl = $('flash');
-  private readonly channelEls = new Map<PowerId, HTMLLIElement>();
-  private cooldowns: Record<PowerId, number> = { ganesha: 0, hanuman: 0, shiva: 0, vishnu: 0 };
-  private cooldownTotal: Record<PowerId, number> = { ganesha: 1, hanuman: 1, shiva: 1, vishnu: 1 };
-  private lastPower: PowerId | null = null;
+  private readonly connection = $('connection');
+  private readonly connectionTitle = $('connection-title');
+  private readonly connectionBody = $('connection-body');
+  private readonly btnRetry = $<HTMLButtonElement>('btn-retry');
+  private readonly defeat = $('defeat');
+  private readonly defeatText = $('defeat-text');
+  private readonly nowPlaying = $('now-playing');
+  private readonly slots = new Map<CombatAction, { fill: HTMLElement; time: HTMLElement; root: HTMLElement }>();
+  private readonly interactSlot = $('slot-interact');
+  private readonly sigilEls = new Map<string, HTMLLIElement>();
+  private cooldowns: Record<CombatAction, number> = { primary: 0, secondary: 0, incantation: 0, heal: 0 };
+  private cooldownTotal: Record<CombatAction, number> = { primary: 1, secondary: 1, incantation: 1, heal: 1 };
+  private wardUntil = 0;
   private cueTimer = 0;
-  private flashTimer = 0;
-  private enemyKey = '';
-  private playerKey = '';
+  private sigilKey = '';
 
-  constructor() {
-    for (const id of POWER_IDS) {
-      const li = document.createElement('li');
-      li.title = `${CHANNELS[id].deity} · ${CHANNELS[id].band} · ${CHANNELS[id].effect}`;
-      li.style.setProperty('--c', CHANNELS[id].color);
-      li.dataset.ready = 'true';
-      this.channels.appendChild(li);
-      this.channelEls.set(id, li);
+  constructor(h: HudHandlers) {
+    for (const action of COMBAT_ACTIONS) {
+      const root = $(`slot-${action}`);
+      this.slots.set(action, { root, fill: root.querySelector('.cd') as HTMLElement, time: root.querySelector('.time') as HTMLElement });
     }
-    // Warm the portrait cache so the first invocation cue does not pop in late.
-    for (const id of POWER_IDS) new Image().src = CHANNELS[id].portrait;
+    const adv = WORLD.adventure;
+    for (const id of [...adv.sigilEnemyIds, adv.bossId]) {
+      const li = document.createElement('li');
+      li.dataset.id = id;
+      li.className = id === adv.bossId ? 'boss' : '';
+      li.title = id === adv.bossId ? 'Keeper' : `Sigil: ${id}`;
+      li.textContent = id === adv.bossId ? '✦' : '◉';
+      this.sigils.appendChild(li);
+      this.sigilEls.set(id, li);
+    }
+    this.btnRetry.addEventListener('click', () => h.onRetry());
+    $('btn-connection-title').addEventListener('click', () => h.onReturnToTitle());
+    $('btn-respawn').addEventListener('click', () => h.onRespawn());
+    $('btn-defeat-menu').addEventListener('click', () => h.onReturnToTitle());
+    const dev = $<HTMLButtonElement>('btn-dev-preview');
+    if (import.meta.env.DEV) {
+      dev.hidden = false;
+      dev.addEventListener('click', () => h.onDevPreview());
+    }
   }
 
   show(): void {
@@ -65,147 +94,130 @@ export class Hud {
   reset(): void {
     this.root.hidden = true;
     this.whispers.replaceChildren();
-    this.enemies.replaceChildren();
-    this.players.replaceChildren();
-    this.enemyKey = '';
-    this.playerKey = '';
-    this.cooldowns = { ganesha: 0, hanuman: 0, shiva: 0, vishnu: 0 };
-    this.lastPower = null;
-    this.invocationName.textContent = '—';
-    this.invocationPortrait.hidden = true;
-    this.invocationCd.style.width = '0%';
+    this.cooldowns = { primary: 0, secondary: 0, incantation: 0, heal: 0 };
+    this.wardUntil = 0;
+    this.wardChip.hidden = true;
     this.selfHp.style.width = '100%';
-    this.selfHpText.textContent = '100';
-    this.death.hidden = true;
     this.target.hidden = true;
-    this.offline.hidden = true;
+    this.interactPrompt.hidden = true;
     this.cue.hidden = true;
-    this.setStatus('connecting', 'Connecting…', false);
+    this.defeat.hidden = true;
+    this.connection.hidden = true;
+    this.previewBanner.hidden = true;
+    this.nowPlaying.textContent = '';
+    this.objectiveText.textContent = '—';
+    this.bossState.textContent = '';
+    this.nextLine.textContent = '';
+    this.huntersLine.textContent = '';
+    this.sigilKey = '';
+    for (const li of this.sigilEls.values()) li.dataset.state = '';
+    this.setStatus('connecting', 'Connecting…');
   }
 
-  /**
-   * Connection pill and OFFLINE PREVIEW banner. The banner follows the local preview, not the socket
-   * state: while the preview is running the courtyard is simulated locally even if a reconnect attempt
-   * is in flight, so the banner stays until a real welcome arrives and the pill says what the socket is doing.
-   */
-  setStatus(kind: NetStatus, detail: string, previewActive: boolean): void {
-    const simulated = previewActive && kind !== 'online';
-    this.status.dataset.kind = simulated ? 'offline' : kind;
-    this.status.textContent = kind === 'online' ? `Connected · ${detail}` : simulated ? `Offline preview · ${detail}` : detail;
-    this.offline.hidden = !simulated;
+  setStatus(kind: NetStatus, detail: string): void {
+    this.status.dataset.kind = kind;
+    this.status.textContent = kind === 'online' ? `Connected · ${detail}` : kind === 'connecting' ? `Connecting · ${detail}` : `Not connected · ${detail}`;
   }
 
-  setSelf(p: PlayerState | null): void {
-    if (!p) return;
+  /** Dev-only synthetic preview marker; never shown for a real connection. */
+  setPreviewBanner(on: boolean): void {
+    this.previewBanner.hidden = !on;
+  }
+
+  setConnection(panel: ConnectionPanel, detail: string): void {
+    this.connection.hidden = panel === 'hidden';
+    if (panel === 'hidden') return;
+    const copy: Record<Exclude<ConnectionPanel, 'hidden'>, [string, string]> = {
+      connecting: ['Connecting to Bellgrave…', 'Reaching the authoritative server. Movement and actions wait until it answers.'],
+      retrying: ['Connection failed', `The server did not answer; ${detail}. Nothing is simulated locally.`],
+      lost: ['Connection lost', `Reconnecting (${detail}). Your hunter is frozen until the server answers.`],
+      failed: ['Connection failed', `${detail}. Retry when the server is up, or return to the title.`],
+    };
+    const [title, body] = copy[panel];
+    this.connectionTitle.textContent = title;
+    this.connectionBody.textContent = body;
+    this.btnRetry.disabled = panel === 'connecting';
+  }
+
+  setSelf(p: PlayerState, now: number): void {
     this.selfName.textContent = p.name;
-    const hp = Math.max(0, Math.min(100, p.hp));
-    this.selfHp.style.width = `${hp}%`;
-    this.selfHpText.textContent = `${Math.round(hp)}`;
-    this.death.hidden = p.hp > 0;
-    for (const id of POWER_IDS) {
-      const deadline = p.cooldowns?.[id] ?? 0;
-      if (deadline > this.cooldowns[id]) this.cooldownTotal[id] = Math.max(250, deadline - Date.now());
-      this.cooldowns[id] = deadline;
+    this.selfHp.style.width = `${Math.max(0, Math.min(100, p.hp))}%`;
+    for (const action of COMBAT_ACTIONS) {
+      const deadline = p.skillCooldowns?.[action] ?? 0;
+      if (deadline > this.cooldowns[action]) this.cooldownTotal[action] = Math.max(250, deadline - now);
+      this.cooldowns[action] = deadline;
     }
-    if (p.power && p.power !== this.lastPower) {
-      this.lastPower = p.power;
-      const ch = CHANNELS[p.power];
-      this.invocationPortrait.src = ch.portrait;
-      this.invocationPortrait.hidden = false;
-      this.invocationName.textContent = `${ch.deity} · ${ch.effect}`;
-      this.invocationCd.parentElement?.style.setProperty('--accent', ch.color);
-    }
+    this.wardUntil = p.wardUntil ?? 0;
   }
 
-  /** Per-frame cooldown readout. `now` is the server clock estimate in epoch ms. */
+  /** Objective card from the authoritative adventure state; without one the card says so. */
+  setAdventure(adv: AdventureState | undefined, enemies: EnemyState[], hunters: number, next: { name: string; zone: string; dist: number } | null): void {
+    const world = WORLD.adventure;
+    this.objectiveText.textContent = adv?.objective || 'Awaiting the keeper’s word from the server…';
+    const key = `${adv?.sigils ?? -1}|${adv?.bossDefeated}|${adv?.portalReady}|${adv?.echo}|${enemies.map((e) => `${e.id}:${e.state}:${e.aggro ? 1 : 0}`).join(',')}`;
+    if (key !== this.sigilKey) {
+      this.sigilKey = key;
+      const sealedCount = adv?.sigils ?? 0;
+      world.sigilEnemyIds.forEach((id, i) => {
+        const li = this.sigilEls.get(id);
+        if (li) li.dataset.state = i < sealedCount ? 'sealed' : 'open';
+      });
+      const bossLi = this.sigilEls.get(world.bossId);
+      const boss = enemies.find((e) => e.id === world.bossId);
+      const bossText = adv?.bossDefeated ? 'Keeper defeated' : sealedCount >= world.sigilEnemyIds.length ? (boss?.aggro ? 'Keeper awake' : 'Keeper waits at the altar') : 'Keeper sealed';
+      if (bossLi) bossLi.dataset.state = adv?.bossDefeated ? 'sealed' : sealedCount >= world.sigilEnemyIds.length ? 'open' : '';
+      const portal = adv?.portalReady ? ` · Portal open${adv.echo ? ` · Echo ${adv.echo}` : ''}` : adv ? ' · Portal sealed' : '';
+      this.bossState.textContent = adv ? `${bossText}${portal}` : '';
+    }
+    this.nextLine.textContent = next ? `Next: ${next.name} · ${next.zone} · ${Math.round(next.dist)} m` : '';
+    this.huntersLine.textContent = hunters > 1 ? `${hunters} hunters in the courtyard` : '';
+  }
+
+  /** Per-frame readouts. `now` is the server clock estimate in epoch ms. */
   tick(now: number): void {
-    for (const id of POWER_IDS) {
-      const remaining = Math.max(0, this.cooldowns[id] - now);
-      this.channelEls.get(id)!.dataset.ready = remaining <= 0 ? 'true' : 'false';
-      if (id === this.lastPower) {
-        const frac = remaining <= 0 ? 1 : 1 - Math.min(1, remaining / this.cooldownTotal[id]);
-        this.invocationCd.style.width = `${Math.round(frac * 100)}%`;
-      }
+    for (const action of COMBAT_ACTIONS) {
+      const slot = this.slots.get(action)!;
+      const remaining = Math.max(0, this.cooldowns[action] - now);
+      const frac = remaining <= 0 ? 0 : Math.min(1, remaining / this.cooldownTotal[action]);
+      slot.fill.style.height = `${Math.round(frac * 100)}%`;
+      slot.time.textContent = remaining > 0 ? `${(remaining / 1000).toFixed(1)}` : '';
+      slot.root.dataset.ready = remaining <= 0 ? 'true' : 'false';
     }
+    const ward = Math.max(0, this.wardUntil - now);
+    this.wardChip.hidden = ward <= 0;
+    if (ward > 0) this.wardChip.textContent = `Warded ${(ward / 1000).toFixed(1)}s`;
   }
 
-  isReady(power: PowerId, now: number): boolean {
-    return this.cooldowns[power] <= now;
+  isReady(action: CombatAction, now: number): boolean {
+    return this.cooldowns[action] <= now;
   }
 
-  setTarget(e: EnemyState | null, now: number): void {
+  setTarget(e: EnemyState | null, dist: number, now: number): void {
     this.target.hidden = !e;
     if (!e) return;
     const ch = channelForLevel(e.level);
-    this.targetName.textContent = `${e.name} · Lv ${e.level} ${e.species}`;
-    const cd = Math.max(0, this.cooldowns[ch.id] - now);
-    this.targetChannel.textContent = cd > 0 ? `${ch.deity} answers in ${(cd / 1000).toFixed(1)}s` : `${ch.deity} will answer · ${ch.effect}`;
+    this.targetName.textContent = `${e.name} · Lv ${e.level} · ${Math.round(dist)} m`;
+    const cd = Math.max(0, this.cooldowns.incantation - now);
+    this.targetChannel.textContent = cd > 0 ? `Q · ${ch.deity} answers in ${(cd / 1000).toFixed(1)}s` : `Q · ${ch.deity} would answer`;
     this.target.style.setProperty('--accent', ch.color);
   }
 
-  setPlayers(players: PlayerState[], selfId: string | null): void {
-    const key = players.map((p) => `${p.id}:${p.name}:${Math.round(p.hp)}:${p.power}`).join('|');
-    if (key === this.playerKey) return;
-    this.playerKey = key;
-    this.players.replaceChildren(
-      ...players.map((p) => {
-        const li = document.createElement('li');
-        if (p.id === selfId) li.className = 'me';
-        const dot = document.createElement('span');
-        dot.className = 'dot';
-        dot.style.setProperty('--c', CHANNELS[p.power]?.color ?? '#ccc');
-        const name = document.createElement('span');
-        name.textContent = p.id === selfId ? `${p.name} (you)` : p.name;
-        const mini = document.createElement('span');
-        mini.className = 'mini';
-        const fill = document.createElement('i');
-        fill.style.width = `${Math.max(0, Math.min(100, p.hp))}%`;
-        mini.appendChild(fill);
-        li.append(dot, name, mini);
-        return li;
-      }),
-    );
+  /** E prompt: only while something is actually in reach (or while fallen). */
+  setInteract(text: string | null): void {
+    this.interactPrompt.hidden = !text;
+    if (text) this.interactText.textContent = text;
+    this.interactSlot.dataset.ready = text ? 'true' : 'false';
   }
 
-  setEnemies(enemies: EnemyState[], now: number): void {
-    const key = enemies.map((e) => `${e.id}:${Math.round(e.hp)}:${e.state}:${e.strategy}:${e.memory.banishments}:${e.memory.lastHunterName ?? ''}:${e.memory.lastPower ?? ''}:${e.state === 'banished' ? Math.ceil((e.returnsAt - now) / 1000) : ''}`).join('|');
-    if (key === this.enemyKey) return;
-    this.enemyKey = key;
-    this.enemies.replaceChildren(
-      ...enemies.map((e) => {
-        const card = document.createElement('div');
-        card.className = 'enemy';
-        card.dataset.state = e.state;
-        card.style.setProperty('--s', STRATEGY_COLOR[e.strategy] ?? '#ccc');
-        const name = document.createElement('div');
-        name.className = 'name';
-        name.innerHTML = `<span>${esc(e.name)}</span><span class="lvl">Lv ${e.level} · ${esc(e.species)}</span>`;
-        const bar = document.createElement('div');
-        bar.className = 'bar foe';
-        const fill = document.createElement('i');
-        fill.style.width = `${e.maxHp ? Math.max(0, Math.min(100, (100 * e.hp) / e.maxHp)) : 0}%`;
-        bar.appendChild(fill);
-        const meta = document.createElement('div');
-        meta.className = 'meta';
-        const stateText = e.state === 'banished' ? `banished · back in ${Math.max(0, Math.ceil((e.returnsAt - now) / 1000))}s` : e.state;
-        meta.innerHTML = `<span class="strategy">${esc(e.strategy.replace('_', ' '))}</span><span>${esc(stateText)}</span>`;
-        card.append(name, bar, meta);
-        if (e.memory.banishments > 0) {
-          const grudge = document.createElement('div');
-          grudge.className = 'grudge';
-          const who = e.memory.lastHunterName ? ` · remembers ${esc(e.memory.lastHunterName)}` : '';
-          const by = e.memory.lastPower ? ` (${CHANNELS[e.memory.lastPower].deity})` : '';
-          grudge.textContent = `Grudge ×${e.memory.banishments}${who}${by}`;
-          card.appendChild(grudge);
-        }
-        return card;
-      }),
-    );
+  setDefeat(show: boolean, text?: string): void {
+    this.defeat.hidden = !show;
+    if (show) this.defeatText.textContent = text || 'Bellgrave holds its breath.';
   }
 
-  whisper(text: string, speaker?: string, system = false): void {
+  whisper(text: string, speaker?: string, system = false, voice = false): void {
     const li = document.createElement('li');
     if (system) li.className = 'system';
+    if (voice) li.className = 'voice';
     if (speaker) {
       const b = document.createElement('b');
       b.textContent = `${speaker}: `;
@@ -213,28 +225,22 @@ export class Hud {
     }
     li.appendChild(document.createTextNode(text));
     this.whispers.prepend(li);
-    while (this.whispers.children.length > 7) this.whispers.lastElementChild?.remove();
+    while (this.whispers.children.length > 6) this.whispers.lastElementChild?.remove();
   }
 
-  /** Brief invocation cue: portrait and deity line fade through, never a selectable card. */
+  /** Small invocation cue beside the crosshair: portrait and deity line fade through, never a selectable card. */
   invocationCue(ch: Channel): void {
     window.clearTimeout(this.cueTimer);
     this.cue.hidden = true;
     this.cueImg.src = ch.portrait;
-    this.cueText.textContent = `${ch.deity} answers · ${ch.effect}`;
+    this.cueText.textContent = `${ch.deity} answers`;
     this.cue.style.setProperty('--accent', ch.color);
-    // Re-trigger the CSS animation.
-    void this.cue.offsetWidth;
+    void this.cue.offsetWidth; // restart the CSS animation
     this.cue.hidden = false;
-    this.cueTimer = window.setTimeout(() => (this.cue.hidden = true), 1400);
+    this.cueTimer = window.setTimeout(() => (this.cue.hidden = true), 1300);
   }
 
-  flash(color: string): void {
-    window.clearTimeout(this.flashTimer);
-    this.flashEl.style.setProperty('--flash', color);
-    this.flashEl.classList.add('on');
-    this.flashTimer = window.setTimeout(() => this.flashEl.classList.remove('on'), 90);
+  setNowPlaying(text: string): void {
+    this.nowPlaying.textContent = text;
   }
 }
-
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
