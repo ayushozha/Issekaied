@@ -105,6 +105,90 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+describe('director strategy write queue', () => {
+  test('hivemind warnings fan out to at most 4 in-flight Ghost.setStrategy writes, never overlap per enemy, coalesce to the latest intent, and drain on close', async () => {
+    // 50 haunts in one room; the room reacts synchronously while durable writes are bounded.
+    const enemies = Array.from({ length: 50 }, (_, i) => ({ id: `haunt-${i}`, name: `Haunt ${i}`, state: 'hunting', gated: false, strategy: 'chase' }));
+    const roomStrategies = new Map<string, string>();
+    const room = {
+      id: 'bellgrave',
+      enemies,
+      players: new Map(),
+      setStrategy: (id: string, s: string) => (roomStrategies.set(id, s), true),
+      whisper: (fromId: string) => ({ eventId: `whisper:${fromId}` }),
+    } as unknown as Room;
+
+    // Fake Ghost.setStrategy: resolves only when the test releases it; records concurrency and per-enemy overlap.
+    const releases: (() => void)[] = [];
+    const persisted = new Map<string, { strategy: string; eventId: string }[]>();
+    const active = new Set<string>();
+    let maxActive = 0;
+    let overlapped = false;
+    const fakeMemory = {
+      mode: () => memory.mode(),
+      deity: (id: string) => memory.deity(id),
+      ghost: (id: string) => ({
+        ...memory.ghost(id),
+        setStrategy: (strategy: string, eventId: string) =>
+          new Promise<unknown>((resolve) => {
+            if (active.has(id)) overlapped = true;
+            active.add(id);
+            maxActive = Math.max(maxActive, active.size);
+            releases.push(() => {
+              active.delete(id);
+              persisted.set(id, [...(persisted.get(id) ?? []), { strategy, eventId }]);
+              resolve({});
+            });
+          }),
+      }),
+    } as unknown as MemoryStore;
+
+    const channels = createChannels(cfg);
+    const director = createDirector({ rooms: new Map([['bellgrave', room]]), eventLog, memory: fakeMemory, channels, minds: createMinds(cfg, npcs), voice: createVoice(cfg, npcs), rehearsal: createRehearsal(cfg) });
+    const warning = (eventId: string, power: 'ganesha' | 'shiva') => ({ eventId, roomId: 'bellgrave', ghostId: 'morrow', ghostName: 'Morrow', hunterId: 'h1', hunterName: 'Ayla', power, suggestedStrategy: counterStrategy(power), at: 1 });
+
+    await channels.warn(warning('w1', 'ganesha'));
+    await Bun.sleep(5);
+    // Gameplay already changed for every haunt before a single remote promise resolved.
+    expect(roomStrategies.size).toBe(50);
+    for (const e of enemies) expect(roomStrategies.get(e.id)).toBe(counterStrategy('ganesha'));
+    expect(releases.length).toBe(4);
+    expect(director.status()).toMatchObject({ strategyWrites: { active: 4, pending: 46, coalesced: 0, limit: 4 } });
+
+    // A second and third warning while writes are in flight: the room flips immediately, pending intents are overwritten, not appended.
+    await channels.warn(warning('w2', 'shiva'));
+    await channels.warn(warning('w3', 'ganesha'));
+    await Bun.sleep(5);
+    for (const e of enemies) expect(roomStrategies.get(e.id)).toBe(counterStrategy('ganesha'));
+    expect(releases.length).toBe(4); // still only 4 RPCs started
+    const mid = director.status().strategyWrites as Record<string, number>;
+    expect(mid.active).toBe(4);
+    expect(mid.pending).toBe(50); // bounded by known enemies, not by warnings (46 queued + 4 in-flight each hold one latest intent)
+    expect(mid.coalesced).toBe(96); // 46 pending overwritten twice + 4 in-flight overwritten once each (w2 -> w3)
+
+    // Release everything as it arrives; close() must not resolve until the queue has fully drained.
+    let closed = false;
+    const closing = director.close().then(() => (closed = true));
+    while (!closed) {
+      await Bun.sleep(1);
+      expect(active.size).toBeLessThanOrEqual(4);
+      while (releases.length) releases.shift()!();
+    }
+    await closing;
+
+    expect(maxActive).toBe(4);
+    expect(overlapped).toBe(false);
+    expect(persisted.size).toBe(50);
+    for (const e of enemies) {
+      const writes = persisted.get(e.id)!;
+      expect(writes.length).toBeLessThanOrEqual(2); // first in-flight + one coalesced latest; intermediate w2 never reached the store
+      expect(writes[writes.length - 1]).toEqual({ strategy: counterStrategy('ganesha'), eventId: 'w3' });
+    }
+    expect(director.status()).toMatchObject({ errors: 0, strategyWrites: { active: 0, pending: 0, coalesced: 96, limit: 4 } });
+    await channels.close();
+  });
+});
+
 describe('director (offline modes)', () => {
   test('a banishment is remembered, warns the other haunts, speaks, rehearses, and becomes searchable lore', async () => {
     const { room, events, director, run, banish } = world('one');

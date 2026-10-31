@@ -71,6 +71,8 @@ Open [issekaied.ayushojha.com](https://issekaied.ayushojha.com), enter a hunter 
 
 **Terse is a real remote runtime here.** [`actor/src/`](actor/src/) defines the durable ghost, deity and Source actors. [`server/src/integrations/memory.ts`](server/src/integrations/memory.ts) calls them through `terse-sdk` actor stubs. The actor service runs on a Freestyle VM; the main game API runs on the VPS. Ghost banishments and grudges, shared Shiva/Vishnu context and the Source ledger survive independently of a room's lifetime. This demo self-hosts Terse's local/dev runtime, rather than claiming managed Terse Cloud or replicated production infrastructure.
 
+Enemy reactions happen immediately; strategy persistence runs separately with at most four concurrent writes. Repeated pending strategy updates for the same ghost keep the latest intent, while encounter history remains in the canonical event log.
+
 **Agent Relay is in the gameplay path.** [`server/src/integrations/relay.ts`](server/src/integrations/relay.ts) uses `@agent-relay/sdk` with the private self-hosted Relaycast engine: `hivemind` delivers enemy warnings that recipients use to change tactics; `pantheon` shares invocation outcomes between divine agents. The Source also relays canonical world facts. This is the SDK integration, separate from installing the coding-session CLI. The official [Agent Relay framework guide](https://agentrelay.net/docs/communicate) and [Relaycast self-hosting guide](https://github.com/AgentWorkforce/relaycast#self-hosting) describe these supported integration paths.
 
 The public [`/health`](https://issekaied.ayushojha.com/health) endpoint exposes provider modes, reachability and sent/received counters. `terse` and `relay` identify actual provider paths; fallback modes are explicitly named. Counters are per process and reset on deployment. They are operational evidence, not sponsor billing receipts.
@@ -116,7 +118,7 @@ Keep management credentials and provider keys out of browser code and `VITE_` va
 
 ## Verification and limits
 
-The backend passes 34 focused tests, including reconnect sequence resets and rejection of late input from replaced sockets. Network checks cover 50 unique enemies, authoritative health-cost powers, stale-input expiry and leaderboard persistence across a restart; the integrated client build passes. OpenAI Realtime connected in the public browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for exact evidence and limits.
+The backend passes 35 focused tests, including reconnect sequence resets, rejection of late input from replaced sockets, and bounded strategy writes for a 50-ghost warning. Network checks cover 50 unique enemies, authoritative health-cost powers, stale-input expiry and leaderboard persistence across a restart; the integrated client build passes. OpenAI Realtime connected in the public browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for exact evidence and limits.
 
 Both frontend and backend are live at the demo URL. The VPS deployment script builds immutable releases from `main`, checks the Source routes before activation and preserves the previous release for rollback. See [deployment instructions](deploy/vps/README.md).
 

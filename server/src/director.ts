@@ -53,6 +53,8 @@ export interface Director {
 const INVOCATION_FLUSH_MS = 2000;
 const KILL_TALK_COOLDOWN_MS = 20_000;
 const MAX_PANTHEON_CONTEXT = 12;
+/** Max concurrent remote Ghost.setStrategy writes; one hivemind warning used to fan out ~48 at once and starve the 4s wrapper. */
+const MAX_STRATEGY_WRITES = 4;
 
 export const hydrationFrom = (mem: GhostMemory): MemoryHydration => {
   const banished = mem.episodes.filter((e) => e.kind === 'banished');
@@ -120,10 +122,46 @@ export function createDirector(deps: DirectorDeps): Director {
       });
   };
 
+  // ---- bounded strategy persistence ----------------------------------------------------------------
+  // Room reactions stay synchronous; only the durable Ghost.setStrategy RPC is queued. At most
+  // MAX_STRATEGY_WRITES are in flight, one per canonical enemy id, and a newer intent for an enemy
+  // overwrites its still-pending older one (the latest strategy wins; intermediate RPC event ids are
+  // coalesced away, while the canonical game event log still has every actual event).
+  const inFlight = new Set<string>();
+  const pendingLatest = new Map<string, { strategy: GhostStrategy; eventId: string }>();
+  const strategyWrites = { coalesced: 0, completed: 0 };
+  let drained: (() => void) | null = null;
+
+  const pumpStrategyWrites = () => {
+    for (const [enemyId, intent] of pendingLatest) {
+      if (inFlight.size >= MAX_STRATEGY_WRITES) break;
+      if (inFlight.has(enemyId)) continue;
+      pendingLatest.delete(enemyId);
+      inFlight.add(enemyId);
+      deps.memory
+        .ghost(enemyId)
+        .setStrategy(intent.strategy, intent.eventId)
+        .then(() => void (strategyWrites.completed += 1), fail('memory.setStrategy'))
+        .finally(() => {
+          inFlight.delete(enemyId);
+          pumpStrategyWrites();
+        });
+    }
+    if (!inFlight.size && !pendingLatest.size) drained?.();
+  };
+
+  const persistStrategy = (enemyId: string, strategy: GhostStrategy, eventId: string) => {
+    if (pendingLatest.has(enemyId)) strategyWrites.coalesced += 1;
+    pendingLatest.set(enemyId, { strategy, eventId });
+    pumpStrategyWrites();
+  };
+
+  const strategyWritesDrained = () => (inFlight.size || pendingLatest.size ? new Promise<void>((resolve) => (drained = resolve)) : Promise.resolve());
+
   const adopt = (room: Room, enemy: RoomEnemy, strategy: GhostStrategy, reason: string, eventId: string, announce = true) => {
     if (!STRATEGIES.includes(strategy)) return;
     if (room.setStrategy(enemy.id, strategy, reason, announce)) counters.strategyChanges += 1;
-    deps.memory.ghost(enemy.id).setStrategy(strategy, eventId).catch(fail('memory.setStrategy'));
+    persistStrategy(enemy.id, strategy, eventId);
   };
 
   // ---- hivemind & pantheon deliveries -----------------------------------------------------------
@@ -186,7 +224,7 @@ export function createDirector(deps: DirectorDeps): Director {
       .then((r) => {
         counters.rehearsals += 1;
         room.setPendingStrategy(enemy.id, r.strategy);
-        deps.memory.ghost(enemy.id).setStrategy(r.strategy, `${eventId}:rehearsal`).catch(fail('memory.setStrategy'));
+        persistStrategy(enemy.id, r.strategy, `${eventId}:rehearsal`);
         log(`rehearsal ${enemy.id} -> ${r.strategy} (${r.executor}, ${r.durationMs}ms)`);
       })
       .catch(fail('rehearsal'));
@@ -261,7 +299,7 @@ export function createDirector(deps: DirectorDeps): Director {
     const plan = await deps.rehearsal.plan({ echo: s.echo, enemies });
     counters.echoPlans += 1;
     const applied = room.applyEchoPlan(plan);
-    if (applied) for (const entry of plan.enemies) deps.memory.ghost(entry.id).setStrategy(entry.strategy, `${s.eventId}:echo${s.echo}`).catch(fail('memory.setStrategy'));
+    if (applied) for (const entry of plan.enemies) persistStrategy(entry.id, entry.strategy, `${s.eventId}:echo${s.echo}`);
     deps.eventLog.addLore({ roomId: room.id, subjectId: 'adventure', title: `Echo ${s.echo} begins`, body: plan.rationale, eventIds: [s.eventId] });
     log(`echo plan ${s.echo}: ${plan.executor}${plan.cached ? ' (cached)' : ''} ${plan.durationMs}ms applied=${applied}`);
   };
@@ -322,12 +360,19 @@ export function createDirector(deps: DirectorDeps): Director {
       log(`hydrated ghost memory via ${deps.memory.mode()}`);
     },
     status() {
-      return { ...counters, pendingInvocationBatches: invocationBatches.size, pantheonContext: pantheonContext.length, lastError: lastError || undefined };
+      return {
+        ...counters,
+        strategyWrites: { active: inFlight.size, pending: pendingLatest.size, coalesced: strategyWrites.coalesced, completed: strategyWrites.completed, limit: MAX_STRATEGY_WRITES },
+        pendingInvocationBatches: invocationBatches.size,
+        pantheonContext: pantheonContext.length,
+        lastError: lastError || undefined,
+      };
     },
     async close() {
       clearInterval(flushTimer);
       for (const t of timers) clearTimeout(t);
       flushInvocations();
+      await strategyWritesDrained();
     },
   };
 }
