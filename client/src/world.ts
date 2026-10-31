@@ -16,6 +16,18 @@ import worldJson from '../../shared/world.json';
 
 export interface Obstacle { id: string; x: number; z: number; width: number; depth: number; height: number }
 export interface EnemySpawn { id: string; name: string; species: Species; level: number; position: Vec3 }
+export interface Landmark { id: string; position: Vec3; radius: number }
+export interface Zone { id: string; name: string; position: Vec3 }
+export interface AdventureDef {
+  safeSpawnRadius: number;
+  aggroRadius: number;
+  leashRadius: number;
+  shrine: Landmark;
+  portal: Landmark;
+  sigilEnemyIds: string[];
+  bossId: string;
+  zones: Zone[];
+}
 export interface WorldDef {
   version: number;
   name: string;
@@ -26,6 +38,7 @@ export interface WorldDef {
   sprintSpeed: number;
   obstacles: Obstacle[];
   enemySpawns: EnemySpawn[];
+  adventure: AdventureDef;
 }
 
 /** Shared world definition (coordinator-owned). The server collides against the same boxes. */
@@ -128,9 +141,13 @@ export function fitFootprint(holder: TransformNode, x: number, z: number, width:
 }
 
 export interface WorldBuild { report: (text: string) => void }
+export interface WorldHandles {
+  /** Brightens the echo portal ring when the authoritative adventure state says it is open. */
+  setPortalReady(ready: boolean): void;
+}
 
-/** Builds the night courtyard: fog, lights, ground, shared obstacles (with fallbacks), props and mist. */
-export function buildWorld(scene: Scene, { report }: WorldBuild): void {
+/** Builds the night courtyard: fog, lights, ground, shared obstacles (with fallbacks), shrine, portal, props and mist. */
+export function buildWorld(scene: Scene, { report }: WorldBuild): WorldHandles {
   const fog = new Color3(0.035, 0.05, 0.09);
   scene.clearColor = new Color4(fog.r, fog.g, fog.b, 1);
   scene.ambientColor = new Color3(0.08, 0.1, 0.16);
@@ -209,14 +226,60 @@ export function buildWorld(scene: Scene, { report }: WorldBuild): void {
       const light = new PointLight(`lamp-${x}-${z}`, new Vector3(x, 2.3, z), scene);
       light.diffuse = new Color3(1, 0.7, 0.4);
       light.specular = Color3.Black();
-      light.intensity = 0.9;
+      light.intensity = 0.7; // calm, steady lantern pools
       light.range = 14;
     }
   }
 
   buildMist(scene);
+  const portal = buildShrineAndPortal(scene);
   void loadChapel(scene, fallbacks.get('chapel'), report);
   void dressCourtyard(scene, fallbacks, lampSpots);
+  return portal;
+}
+
+/** Gate shrine (altar, steady candles) and the echo portal ring, at the shared adventure positions. */
+function buildShrineAndPortal(scene: Scene): WorldHandles {
+  const { shrine, portal } = WORLD.adventure;
+  const stone = flatMaterial(scene, 'shrine-stone', new Color3(0.2, 0.19, 0.2));
+  const altar = MeshBuilder.CreateBox('shrine-altar', { width: 1.6, height: 0.9, depth: 0.8 }, scene);
+  altar.position.set(shrine.position[0], 0.45, shrine.position[2] + 1.2);
+  altar.material = stone;
+  const plinth = MeshBuilder.CreateBox('shrine-plinth', { width: 2.4, height: 0.2, depth: 1.6 }, scene);
+  plinth.position.set(shrine.position[0], 0.1, shrine.position[2] + 1.2);
+  plinth.material = stone;
+  const wax = flatMaterial(scene, 'candle-wax', new Color3(0.85, 0.8, 0.68));
+  const flame = flatMaterial(scene, 'candle-flame', Color3.Black(), new Color3(1, 0.72, 0.32));
+  for (const [dx, h] of [[-0.5, 0.28], [-0.15, 0.2], [0.25, 0.32], [0.55, 0.18]] as const) {
+    const candle = MeshBuilder.CreateCylinder(`candle-${dx}`, { diameter: 0.08, height: h, tessellation: 8 }, scene);
+    candle.position.set(shrine.position[0] + dx, 0.9 + h / 2, shrine.position[2] + 1.1);
+    candle.material = wax;
+    const tip = MeshBuilder.CreateSphere(`candle-flame-${dx}`, { diameter: 0.06, segments: 6 }, scene);
+    tip.position.set(shrine.position[0] + dx, 0.9 + h + 0.04, shrine.position[2] + 1.1);
+    tip.material = flame; // steady: no flicker, no exposure changes
+  }
+  const bell = MeshBuilder.CreateCylinder('shrine-bell', { diameterTop: 0.18, diameterBottom: 0.42, height: 0.42, tessellation: 12 }, scene);
+  bell.position.set(shrine.position[0], 1.25, shrine.position[2] + 1.35);
+  bell.material = flatMaterial(scene, 'shrine-bell-mat', new Color3(0.45, 0.36, 0.18), new Color3(0.08, 0.06, 0.02));
+
+  const ring = MeshBuilder.CreateTorus('echo-portal', { diameter: portal.radius * 1.6, thickness: 0.12, tessellation: 48 }, scene);
+  ring.rotation.x = Math.PI / 2; // standing ring
+  ring.position.set(portal.position[0], 1.7, portal.position[2]);
+  const ringMat = flatMaterial(scene, 'echo-portal-mat', new Color3(0.05, 0.1, 0.1), new Color3(0.12, 0.3, 0.28), 0.9);
+  ring.material = ringMat;
+  const veil = MeshBuilder.CreateDisc('echo-portal-veil', { radius: portal.radius * 0.72, tessellation: 40 }, scene);
+  veil.rotation.x = Math.PI / 2;
+  veil.position.copyFrom(ring.position);
+  const veilMat = flatMaterial(scene, 'echo-portal-veil-mat', Color3.Black(), new Color3(0.2, 0.5, 0.45), 0.12);
+  veilMat.disableLighting = true;
+  veilMat.backFaceCulling = false;
+  veil.material = veilMat;
+  return {
+    setPortalReady(ready: boolean) {
+      ringMat.emissiveColor = ready ? new Color3(0.35, 0.85, 0.75) : new Color3(0.12, 0.3, 0.28);
+      veilMat.alpha = ready ? 0.35 : 0.12;
+    },
+  };
 }
 
 function buildFountain(scene: Scene, holder: TransformNode, o: Obstacle): void {
@@ -323,7 +386,7 @@ async function loadChapel(scene: Scene, fallback: TransformNode | undefined, rep
 
 async function dressCourtyard(scene: Scene, fallbacks: Map<string, TransformNode>, lampSpots: Array<[number, number, boolean]>): Promise<void> {
   const rand = seeded(1031);
-  const names = ['crypt-large', 'iron-fence', 'iron-fence-border-column', 'gravestone-cross', 'gravestone-round', 'gravestone-wide', 'gravestone-bevel', 'gravestone-broken', 'cross-wood', 'pine-crooked', 'pine', 'pine-fall', 'lightpost-single', 'bench', 'urn-round'] as const;
+  const names = ['crypt-large', 'iron-fence', 'iron-fence-border-column', 'gravestone-cross', 'gravestone-round', 'gravestone-wide', 'gravestone-bevel', 'gravestone-broken', 'cross-wood', 'pine-crooked', 'pine', 'pine-fall', 'lightpost-single', 'bench', 'urn-round', 'pumpkin', 'pumpkin-carved'] as const;
   const kits = Object.fromEntries(await Promise.all(names.map(async (n) => [n, await loadKit(scene, `${n}.glb`)]))) as Record<(typeof names)[number], AssetContainer | null>;
 
   // Crypts: fit the Kenney crypt to the shared obstacle footprint, then retire the box.
@@ -381,6 +444,10 @@ async function dressCourtyard(scene: Scene, fallbacks: Map<string, TransformNode
   if (kits['lightpost-single']) for (const [x, z] of lampSpots) placeKit(kits['lightpost-single'], 'lamppost', new Vector3(x, 0, z), x < 0 ? Math.PI / 2 : -Math.PI / 2, 1.6);
   if (kits.bench) for (const [x, z, yaw] of [[-5.5, -3, Math.PI / 2], [5.5, -3, -Math.PI / 2]] as const) placeKit(kits.bench, 'bench', new Vector3(x, 0, z), yaw, 1.2);
   if (kits['urn-round']) for (const [x, z] of [[-2.2, 4.5], [2.2, 4.5]]) placeKit(kits['urn-round'], 'urn', new Vector3(x, 0, z), 0, 1.3);
+  // Two small pumpkins beside the gate shrine only.
+  const shrine = WORLD.adventure.shrine.position;
+  if (kits.pumpkin) placeKit(kits.pumpkin, 'pumpkin', new Vector3(shrine[0] - 1.5, 0, shrine[2] + 0.6), 0.4, 0.9);
+  if (kits['pumpkin-carved']) placeKit(kits['pumpkin-carved'], 'pumpkin-carved', new Vector3(shrine[0] + 1.6, 0, shrine[2] + 0.5), -0.6, 0.9);
 }
 
 export type { Mesh };
