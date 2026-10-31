@@ -1,6 +1,6 @@
 # Two-minute demo: Issekaied — The Dead Remember
 
-[Halloween narration — male British](demo-audio/Issekaied-2min-male-british-halloween.mp3) · [Exact two-minute WAV master](demo-audio/Issekaied-2min-male-british-halloween.wav) · [Voice and processing notes](demo-audio/README.md)
+[Finished two-minute video](demo-video/Issekaied-2min-submission.mp4) · [Current narration](demo-video/narration-2min.mp3) · [WAV editing master](demo-video/narration-master.wav) · [Video provenance](demo-video/README.md)
 
 Delivery: expressive male British storyteller. Begin with a monstrous laugh, then whisper. Build into curious, mischievous enthusiasm. Emphasize **stateful characters** and **agent-to-agent communication**. Bracketed directions are performance notes, not spoken words. Record the deployed game and its real responses.
 

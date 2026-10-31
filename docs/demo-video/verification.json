@@ -1,0 +1,123 @@
+{
+  "file": "docs/demo-video/Issekaied-2min-submission.mp4",
+  "meta": {
+    "duration": "120.000000",
+    "size": "12366066"
+  },
+  "shots": [
+    {
+      "file": "assets/video/rebirth.mp4",
+      "duration": 12
+    },
+    {
+      "file": "output/demo-capture/raw-02-combat-source.mp4",
+      "start": 0,
+      "duration": 12,
+      "gameplay": true,
+      "label": "TERSE / STATEFUL CHARACTERS",
+      "sub": "Every ghost keeps its own memory"
+    },
+    {
+      "file": "output/demo-capture/raw-02-combat-source.mp4",
+      "start": 12,
+      "duration": 12,
+      "gameplay": true,
+      "label": "TERSE / STATEFUL CHARACTERS",
+      "sub": "Durable memory, hosted on Freestyle"
+    },
+    {
+      "file": "output/demo-capture/raw-02-combat-source.mp4",
+      "start": 23,
+      "duration": 8,
+      "gameplay": true,
+      "label": "AGENT RELAY / AGENT-TO-AGENT COMMUNICATION",
+      "sub": "One encounter becomes another agent's context"
+    },
+    {
+      "file": "output/demo-capture/raw-03-multiplayer-menu.mp4",
+      "start": 69,
+      "duration": 16,
+      "gameplay": true,
+      "label": "CONNECTED MINDS",
+      "sub": "Mastra + OpenAI: reasoning and voices"
+    },
+    {
+      "file": "output/demo-capture/raw-03-multiplayer-menu.mp4",
+      "start": 48,
+      "duration": 4.6,
+      "gameplay": true,
+      "label": "OPENAI REALTIME / THE SOURCE",
+      "sub": "Ask the world a question"
+    },
+    {
+      "file": "output/demo-capture/raw-03-multiplayer-menu.mp4",
+      "start": 59,
+      "duration": 8.5,
+      "gameplay": true,
+      "label": "CAPTURED LIVE IN THE GAME",
+      "sub": "A response grounded in the current objective",
+      "caption": "Next, look for Morrow. It's marked as still hunting\nin your current area, and it's the first named enemy\non your banish objective."
+    },
+    {
+      "file": "output/demo-capture/raw-03-multiplayer-menu.mp4",
+      "start": 67.5,
+      "duration": 4.9,
+      "gameplay": true,
+      "label": "LIVE VOICE AND TEXT",
+      "sub": "The Source checks the current game state"
+    },
+    {
+      "file": "output/demo-capture/raw-03-multiplayer-menu.mp4",
+      "start": 90,
+      "duration": 6,
+      "label": "SUPABASE / A PERSISTENT PLAYER LEDGER",
+      "sub": "Real hunter statistics and recorded events"
+    },
+    {
+      "file": "output/demo-capture/08-main-menu-leaderboard.png",
+      "duration": 6,
+      "label": "SAVED HUNTER HISTORY",
+      "sub": "Banishments, deaths, joins and time played"
+    },
+    {
+      "file": "output/demo-capture/raw-01-menu-map.mp4",
+      "start": 10,
+      "duration": 6,
+      "gameplay": true,
+      "label": "SUPERSERVE / BOUNDED TACTIC REHEARSAL",
+      "sub": "Create a sandbox, score a plan, clean up"
+    },
+    {
+      "file": "output/demo-capture/raw-03-multiplayer-menu.mp4",
+      "start": 72,
+      "duration": 6.5,
+      "gameplay": true,
+      "label": "JOIN THE SAME LIVE WORLD",
+      "sub": "Two actual browser players, sharing Bellgrave"
+    },
+    {
+      "file": "output/demo-capture/raw-01-menu-map.mp4",
+      "start": 18,
+      "duration": 6.5,
+      "gameplay": true,
+      "label": "FIFTY ENEMIES / ONE HAUNTED WORLD",
+      "sub": "Divine power has a real health cost"
+    },
+    {
+      "file": "output/submission-render/endcard.mp4",
+      "duration": 11
+    }
+  ],
+  "actualSourceAudio": true,
+  "decode": "passed",
+  "video": {
+    "codec": "h264",
+    "width": 1280,
+    "height": 720,
+    "fps": 30
+  },
+  "audio": {
+    "codec": "aac",
+    "sampleRate": 48000
+  }
+}

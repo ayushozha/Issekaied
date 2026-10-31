@@ -6,7 +6,9 @@ A first-person Halloween adventure built around **stateful characters** and **ag
 
 *Project key art. Gameplay uses a 3D courtyard, illustrated ghost impostors and live interface elements.*
 
-[Play the demo](https://issekaied.ayushojha.com) · [Project pitch](docs/PROJECT-PITCH.md) · [Verification notes](docs/DEMO.md) · [Asset credits](docs/MAP-ASSETS.md)
+[Play the demo](https://issekaied.ayushojha.com) · [Watch the two-minute video](docs/demo-video/Issekaied-2min-submission.mp4) · [Demo script](docs/DEMO-SCRIPT-2MIN.md) · [Verification notes](docs/DEMO.md) · [Asset credits](docs/MAP-ASSETS.md)
+
+**Stateful Apps:** Terse actors preserve each ghost's history, divine context and the Source ledger. **Agent-to-Agent Communication:** Agent Relay delivers warnings and outcomes that other characters can act on.
 
 ## The hunt
 
@@ -26,7 +28,7 @@ The hunter draws strength from Ganesha, Hanuman, Shiva and Vishnu according to t
 
 Settings control music, voice, effects, look sensitivity and reduced motion. Visible weapon swings and ward animations accompany mouse attacks. Incantations last under two seconds, use distinct portraits, mandalas, wind, frost and chakra effects, and cost 25 vitality. Nearby enemies speak sparingly; the Source answers when you ask. Movement requires held keys and stops when input is released or lost.
 
-The on-screen hunter leaderboard records banishments, deaths, arrivals and play time from server-authored events in Supabase. Ghost memory and player history continue across hunts.
+The on-screen hunter leaderboard records banishments, deaths, arrivals and play time from server-authored events in Supabase. Open **Leaderboard** from the main menu to inspect the full top-ten ledger, or use **Copy join link** to invite another hunter. Ghost memory and player history continue across hunts.
 
 ## Stateful characters: a world that remembers
 
