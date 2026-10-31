@@ -35,8 +35,14 @@ export interface GameServerOptions {
   source?: { handle(req: Request): Promise<Response | null> };
   /** Fires after a socket has successfully joined and received its welcome (public id, never the guest key). */
   onJoin?: (info: { roomId: string; playerId: string; name: string; reconnected: boolean }) => void;
+  /** Elapsed server time on an open joined socket: a chunk every SESSION_CHUNK_MS and the remainder on disconnect. */
+  onSession?: (info: { roomId: string; playerId: string; durationMs: number; final: boolean }) => void;
+  /** Public leaderboard rows (already sanitized, no ids or keys). */
+  leaderboard?: () => Promise<unknown>;
   log?: (line: string) => void;
 }
+
+const SESSION_CHUNK_MS = 10_000;
 
 /** Authoritative snapshot of one hunter for The Source; mirrors the Source module's player context shape. */
 export interface SourcePlayerView {
@@ -121,8 +127,21 @@ const allow = (d: SocketData, now: number): boolean => {
 export function startGameServer(opts: GameServerOptions): GameServer {
   const log = opts.log ?? (() => {});
   const sockets = new Map<string, GameSocket>();
+  const sessionMark = new Map<GameSocket, number>();
   const m: LoopMetrics = { steps: 0, avgStepMs: 0, maxStepMs: 0, maxLagMs: 0, sockets: 0, publishedSnapshots: 0, publishedEvents: 0 };
   let stepMsTotal = 0;
+
+  /** Emit the elapsed, server-measured time since the last chunk for this socket; never double counts. */
+  const flushSession = (ws: GameSocket, final: boolean) => {
+    const mark = sessionMark.get(ws);
+    const d = ws.data;
+    if (mark === undefined || !d.playerId || !d.roomId) return;
+    const now = Date.now();
+    if (final) sessionMark.delete(ws);
+    else sessionMark.set(ws, now);
+    const durationMs = now - mark;
+    if (durationMs > 0) opts.onSession?.({ roomId: d.roomId, playerId: d.playerId, durationMs, final });
+  };
 
   const send = (ws: GameSocket, msg: ServerMessage) => {
     if (ws.readyState === 1) ws.send(JSON.stringify(msg));
@@ -143,12 +162,14 @@ export function startGameServer(opts: GameServerOptions): GameServer {
     const key = `${room.id}:${result.player.id}`;
     const previous = sockets.get(key);
     if (previous && previous !== ws) {
+      flushSession(previous, true);
       previous.data.playerId = null; // the close handler must not park a hunter who just reattached
       previous.close(4001, 'superseded by a newer connection');
     }
     sockets.set(key, ws);
     d.playerId = result.player.id;
     d.roomId = room.id;
+    sessionMark.set(ws, Date.now());
     ws.subscribe(topic(room.id));
     send(ws, { type: 'welcome', v: 1, selfId: result.player.id, roomId: room.id, tickRate: opts.tickRate, snapshotRate: opts.snapshotRate, snapshot: room.snapshot() });
     log(`join ${room.id} ${result.player.name} (${result.player.id})${result.reconnected ? ' reconnected' : ''} players=${room.connectedCount}`);
@@ -177,6 +198,9 @@ export function startGameServer(opts: GameServerOptions): GameServer {
       if (url.pathname === '/api/lore') {
         const q = (url.searchParams.get('q') ?? '').slice(0, 80);
         return Response.json((await opts.lore?.(q)) ?? []);
+      }
+      if (url.pathname === '/api/leaderboard') {
+        return Response.json((await opts.leaderboard?.()) ?? { mode: 'unavailable', players: [], updatedAt: Date.now() }, { headers: { 'cache-control': 'public, max-age=5' } });
       }
       if (url.pathname.startsWith('/api/source/')) {
         if (!opts.source) return Response.json({ error: 'source_not_configured' }, { status: 503, headers: { 'cache-control': 'no-store' } });
@@ -217,6 +241,7 @@ export function startGameServer(opts: GameServerOptions): GameServer {
         if (!d.playerId || !d.roomId) return;
         const key = `${d.roomId}:${d.playerId}`;
         if (sockets.get(key) !== ws) return;
+        flushSession(ws, true);
         sockets.delete(key);
         const room = opts.rooms.get(d.roomId);
         room?.leave(d.playerId);
@@ -224,6 +249,10 @@ export function startGameServer(opts: GameServerOptions): GameServer {
       },
     },
   });
+
+  const sessionTimer = setInterval(() => {
+    for (const ws of sockets.values()) flushSession(ws, false);
+  }, SESSION_CHUNK_MS);
 
   const tickMs = 1000 / opts.tickRate;
   const snapshotEvery = Math.max(1, Math.round(opts.tickRate / opts.snapshotRate));
@@ -259,6 +288,8 @@ export function startGameServer(opts: GameServerOptions): GameServer {
     },
     stop() {
       clearInterval(timer);
+      clearInterval(sessionTimer);
+      for (const ws of sockets.values()) flushSession(ws, true);
       server.stop(true);
     },
   };

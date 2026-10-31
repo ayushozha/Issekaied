@@ -38,6 +38,8 @@ export interface EnemyState {
   memory: { banishments: number; lastPower?: PowerId; lastHunterName?: string; version: number };
   returnsAt: number;
   aggro?: boolean;
+  /** Visual family to reuse: morrow | nix | vesper | raksha | goblin | orc | beast. Authoritative species stays `species`. */
+  baseId?: string;
 }
 
 export interface AdventureState {
@@ -77,6 +79,8 @@ export interface GameEvent {
   text?: string;
   /** Same-origin server-generated speech; never an arbitrary NPC-supplied external URL. */
   audioUrl?: string;
+  /** HP the server deducted from the caster for this cast (incantation only). */
+  hpCost?: number;
 }
 
 export type ServerMessage =

@@ -30,10 +30,12 @@ export const HANUMAN_KNOCKBACK_M = 2.5;
 export const GANESHA_WARD_MS = 4000;
 
 export const PLAYER_MAX_HP = 100;
+/** Q costs a quarter of max HP, paid by the caster; rejected when it would leave less than 1 HP. */
+export const INCANTATION_HP_COST = Math.round(PLAYER_MAX_HP * 0.25);
 /** Minimum spacing between accepted actions of any kind, independent of per-action cooldowns. */
 export const CAST_MIN_INTERVAL_MS = 150;
-/** Movement intent older than this is dropped so a lost tab never leaves a hunter walking. */
-export const STALE_INPUT_MS = 400;
+/** Movement intent older than this is dropped so a lost tab never leaves a hunter walking (input lease). */
+export const STALE_INPUT_MS = 220;
 /** No input at all for this long marks the hunter inactive (treated like paused). */
 export const IDLE_INACTIVE_MS = 5000;
 export const TARGET_MIN_DIST = 0.5;

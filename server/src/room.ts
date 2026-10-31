@@ -23,6 +23,7 @@ import {
   HANUMAN_KNOCKBACK_M,
   HEAL,
   IDLE_INACTIVE_MS,
+  INCANTATION_HP_COST,
   PLAYER_MAX_HP,
   PORTAL_COOLDOWN_MS,
   POWERS,
@@ -52,6 +53,8 @@ import {
   MELEE_STOP,
   PLAYER_RADIUS,
   WORLD,
+  ENEMY_SPAWNS,
+  baseIdFor,
   clampToCircle,
   dist2d,
   inSafeZone,
@@ -203,7 +206,7 @@ export class Room {
     this.nextEventId = opts.nextEventId ?? (() => `${this.id}-${++this.counter}`);
     this.onEvent = opts.onEvent ?? (() => {});
     this.onSignal = opts.onSignal ?? (() => {});
-    this.enemies = WORLD.enemySpawns.map((s, i) => ({
+    this.enemies = ENEMY_SPAWNS.map((s, i) => ({
       id: s.id,
       name: s.name,
       species: s.species,
@@ -331,8 +334,9 @@ export class Room {
     p.yaw = normalizeYaw(msg.yaw);
     p.pitch = clampPitch(msg.pitch);
     p.active = msg.active ?? true; // resume is explicit: the next deliberate input with active !== false
-    const m = p.active && p.hp > 0 ? clampMove(msg.moveX, msg.moveZ) : ZERO;
-    p.move = { x: m.x, z: m.z, sprint: msg.sprint };
+    const live = p.active && p.hp > 0;
+    const m = live ? clampMove(msg.moveX, msg.moveZ) : ZERO;
+    p.move = { x: m.x, z: m.z, sprint: live && msg.sprint }; // active:false clears movement and sprint immediately
   }
 
   /** Can this hunter act right now? Dead, paused/idle or disconnected hunters cannot. */
@@ -405,13 +409,15 @@ export class Room {
   private incantation(p: RoomPlayer, aim: Vec3, now: number): void {
     const target = this.aimedTarget(p, aim);
     const power = powerForEnemyLevel(target?.level ?? 1);
+    if (p.hp - INCANTATION_HP_COST < 1) return; // unaffordable: rejected before any cooldown or effect; casting never kills
     if (p.cooldowns[power] > now) return; // the deity's own cooldown, not the client's clock
     p.lastCastAt = now;
+    p.hp -= INCANTATION_HP_COST;
     p.cooldowns = { ...p.cooldowns, [power]: now + POWERS[power].cooldownMs };
     p.skillCooldowns = { ...p.skillCooldowns, incantation: now + CAST_MIN_INTERVAL_MS };
     p.power = power;
     if (power === 'ganesha') p.wardUntil = Math.max(p.wardUntil, now + GANESHA_WARD_MS);
-    const castId = this.emit({ kind: 'cast', action: 'incantation', fromId: p.id, power, position: vec(p, EYE_HEIGHT) });
+    const castId = this.emit({ kind: 'cast', action: 'incantation', fromId: p.id, power, position: vec(p, EYE_HEIGHT), hpCost: INCANTATION_HP_COST });
     let hit = false;
     if (target) {
       const d = Math.hypot(target.x - p.x, ENEMY_Y - p.y, target.z - p.z);
@@ -926,6 +932,7 @@ export class Room {
       memory: e.memory,
       returnsAt: e.returnsAt,
       aggro: e.targetId !== null,
+      baseId: baseIdFor(e.id, e.species),
     }));
     return { tick: this.tick, serverTime: this.now(), players, enemies, adventure: this.adventureState() };
   }
