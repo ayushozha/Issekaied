@@ -18,16 +18,28 @@ import { flatMaterial } from './world';
  * generated atlas. They are not rigged 3D characters. The authoritative transform lives on `root`
  * (server position); the plane is a child and only ever changes how the haunt is drawn.
  */
-const ATLAS_URL = '/generated/ghosts/haunts-atlas.png';
+const HAUNTS_ATLAS = '/generated/ghosts/haunts-atlas.png';
+const MONSTERS_ATLAS = '/generated/ghosts/monsters-atlas.png'; // three equal transparent columns: goblin, orc, beast
 const ALPHA_CUTOFF = 16 / 255; // drops the generator's alpha-1 dust, keeps spectral wisps for blending
-interface SpriteDef { crop: [number, number, number, number]; height: number; maxWidth: number; base: number }
-/** Tight crops from assets/generated/PROVENANCE.md: normalized image rect (left, top, right, bottom), top-left origin. */
+interface SpriteDef { atlas: string; crop: [number, number, number, number]; height: number; maxWidth: number; base: number }
+/** Normalized image rects (left, top, right, bottom), top-left origin. Haunt crops from assets/generated/PROVENANCE.md. */
 const SPRITES: Record<string, SpriteDef> = {
-  morrow: { crop: [0.121212, 0.070175, 0.416268, 0.475279], height: 1.95, maxWidth: 1.4, base: 0.25 },
-  nix: { crop: [0.608453, 0.119617, 0.91866, 0.463317], height: 1.25, maxWidth: 1.4, base: 0.05 },
-  vesper: { crop: [0.100478, 0.555024, 0.437799, 0.927432], height: 1.75, maxWidth: 1.6, base: 0.45 }, // wings may exceed 1.4
-  raksha: { crop: [0.582935, 0.554226, 0.942584, 0.924242], height: 1.55, maxWidth: 1.4, base: 0.1 },
+  morrow: { atlas: HAUNTS_ATLAS, crop: [0.121212, 0.070175, 0.416268, 0.475279], height: 1.95, maxWidth: 1.4, base: 0.25 },
+  nix: { atlas: HAUNTS_ATLAS, crop: [0.608453, 0.119617, 0.91866, 0.463317], height: 1.25, maxWidth: 1.4, base: 0.05 },
+  vesper: { atlas: HAUNTS_ATLAS, crop: [0.100478, 0.555024, 0.437799, 0.927432], height: 1.75, maxWidth: 1.6, base: 0.45 }, // wings may exceed 1.4
+  raksha: { atlas: HAUNTS_ATLAS, crop: [0.582935, 0.554226, 0.942584, 0.924242], height: 1.55, maxWidth: 1.4, base: 0.1 },
+  goblin: { atlas: MONSTERS_ATLAS, crop: [0, 0, 1 / 3, 1], height: 1.3, maxWidth: 1.3, base: 0.05 },
+  orc: { atlas: MONSTERS_ATLAS, crop: [1 / 3, 0, 2 / 3, 1], height: 1.8, maxWidth: 1.4, base: 0.05 },
+  beast: { atlas: MONSTERS_ATLAS, crop: [2 / 3, 0, 1, 1], height: 1.5, maxWidth: 1.4, base: 0.1 },
 };
+/** Every enemy draws from an approved atlas: valid baseId first, canonical id, then id-prefix/species alias. */
+const SPRITE_ALIAS: Record<string, string> = { morrow: 'morrow', nix: 'nix', vesper: 'vesper', raksha: 'raksha', ghost: 'morrow', ghoul: 'nix', goblin: 'goblin', orc: 'orc', rakshasa: 'raksha', beast: 'beast' };
+export function spriteKeyFor(e: EnemyState): string {
+  const base = (e as { baseId?: string }).baseId;
+  if (base && SPRITES[base]) return base;
+  if (SPRITES[e.id]) return e.id;
+  return SPRITE_ALIAS[e.id.split('-')[0]] ?? SPRITE_ALIAS[e.species] ?? 'morrow';
+}
 const LABEL_MIN_DISTANCE = 3;
 const LABEL_MAX_DISTANCE = 28;
 const SPRITE_EMISSIVE = new Color3(0.88, 0.88, 0.9);
@@ -110,6 +122,7 @@ interface EnemyView {
   label: Label;
   target: Vector3;
   state: EnemyState;
+  key: string;
   height: number;
   base: number;
   phase: number;
@@ -135,8 +148,7 @@ export class EntityLayer {
   private readonly bodyGlow: StandardMaterial;
   private readonly ring: Mesh;
   private targetId: string | null = null;
-  private atlas: Texture | null = null;
-  private atlasState: 'idle' | 'loading' | 'ready' | 'failed' = 'idle';
+  private readonly atlases = new Map<string, { tex: Texture; state: 'loading' | 'ready' | 'failed' }>();
 
   constructor(private readonly scene: Scene, private readonly glow: GlowLayer | null = null) {
     this.bodyGlow = flatMaterial(scene, 'hunter-lantern-mat', Color3.Black(), new Color3(1, 0.75, 0.4));
@@ -260,34 +272,35 @@ export class EntityLayer {
     }
   }
 
-  private ensureAtlas(): void {
-    if (this.atlasState !== 'idle') return;
-    this.atlasState = 'loading';
-    this.atlas = new Texture(
-      ATLAS_URL,
+  private ensureAtlas(url: string): void {
+    if (this.atlases.has(url)) return;
+    const entry = { tex: null as unknown as Texture, state: 'loading' as 'loading' | 'ready' | 'failed' };
+    this.atlases.set(url, entry);
+    entry.tex = new Texture(
+      url,
       this.scene,
       false,
       true,
       Texture.TRILINEAR_SAMPLINGMODE,
       () => {
-        this.atlasState = 'ready';
-        for (const v of this.enemies.values()) this.buildSprite(v);
+        entry.state = 'ready';
+        for (const v of this.enemies.values()) if (SPRITES[v.key]?.atlas === url) this.buildSprite(v);
       },
       (message) => {
-        this.atlasState = 'failed';
-        console.warn('[entities] haunt atlas failed', message);
-        this.onAssetIssue?.('Haunt artwork failed to load; haunts are shown as plain markers.');
+        entry.state = 'failed';
+        console.warn('[entities] atlas failed', url, message);
+        this.onAssetIssue?.('Some enemy artwork failed to load; those enemies are shown as plain markers.');
       },
     );
   }
 
   private createEnemy(e: EnemyState): EnemyView {
-    this.ensureAtlas();
     const root = new TransformNode(`enemy-${e.id}`, this.scene);
     root.position.set(e.position[0], e.position[1], e.position[2]);
     const visual = new TransformNode(`enemy-${e.id}-visual`, this.scene);
     visual.parent = root;
-    const def = SPRITES[e.id];
+    const key = spriteKeyFor(e);
+    const def = SPRITES[key];
     // Plain spectral marker until the atlas is ready (or if it never is). Not a stand-in character.
     const marker = MeshBuilder.CreateSphere(`enemy-${e.id}-marker`, { diameter: 0.5, segments: 10 }, this.scene);
     marker.position.y = 1.1;
@@ -296,25 +309,31 @@ export class EntityLayer {
     marker.isPickable = false;
     this.glow?.addExcludedMesh(marker);
     const label = new Label(this.scene, visual, 1.75, 1.3, this.glow);
-    const view: EnemyView = { root, visual, marker, sprite: null, spriteMat: null, label, target: root.position.clone(), state: e, height: 1.5, base: def?.base ?? 0.1, phase: Math.random() * 6, hitTimer: 0 };
+    const view: EnemyView = { root, visual, marker, sprite: null, spriteMat: null, label, target: root.position.clone(), state: e, key, height: 1.5, base: def?.base ?? 0.1, phase: Math.random() * 6, hitTimer: 0 };
     this.enemies.set(e.id, view);
-    if (this.atlasState === 'ready') this.buildSprite(view);
+    if (def) {
+      this.ensureAtlas(def.atlas);
+      if (this.atlases.get(def.atlas)?.state === 'ready') this.buildSprite(view);
+    }
     return view;
   }
 
   private buildSprite(view: EnemyView): void {
-    const def = SPRITES[view.state.id];
-    if (!def || view.sprite || !this.atlas || view.root.isDisposed()) return;
+    const def = SPRITES[view.key];
+    const entry = def ? this.atlases.get(def.atlas) : undefined;
+    if (!def || !entry || entry.state !== 'ready' || view.sprite || view.root.isDisposed()) return;
     const [l, t, r, b] = def.crop;
-    const aspect = (r - l) / (b - t); // the atlas is square, so normalized ratio equals pixel ratio
+    // Plane aspect from the loaded image's real pixel size times the crop; never assume a square atlas.
+    const size = entry.tex.getBaseSize();
+    const aspect = size.width > 0 && size.height > 0 ? (size.width * (r - l)) / (size.height * (b - t)) : (r - l) / (b - t);
     let height = def.height;
     let width = height * aspect;
     if (width > def.maxWidth) {
       width = def.maxWidth;
       height = width / aspect;
     }
-    // Same URL resolves to the one cached atlas; only the UV window differs per haunt.
-    const tex = new Texture(ATLAS_URL, this.scene, false, true, Texture.TRILINEAR_SAMPLINGMODE);
+    // Same URL resolves to the one cached atlas; only the UV window differs per enemy.
+    const tex = new Texture(def.atlas, this.scene, false, true, Texture.TRILINEAR_SAMPLINGMODE);
     tex.hasAlpha = true;
     tex.uOffset = l;
     tex.uScale = r - l;

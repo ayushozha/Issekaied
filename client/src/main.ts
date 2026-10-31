@@ -16,7 +16,7 @@ import {
 import { CHANNELS } from './powers';
 import { WORLD, buildWorld } from './world';
 import { LocalPlayer } from './player';
-import { EntityLayer } from './entities';
+import { EntityLayer, spriteKeyFor } from './entities';
 import { EffectsLayer } from './effects';
 import { Hud } from './hud';
 import { Menus, type Recitation, type Settings } from './menus';
@@ -27,6 +27,29 @@ import { dressHalloween } from './halloween-props';
 import { DIRECTIONS, SourceVoice } from './source-voice';
 
 registerBuiltInLoaders();
+
+// Mac-owned onboarding module; resolved at build time if present, so the client builds either way.
+type RebirthModule = { startRebirthIntro: (onDone: () => void, options?: { videoUrl?: string }) => () => void };
+const rebirthModules = import.meta.glob<RebirthModule>('./rebirth-intro.ts');
+const ONBOARDING_SEEN = 'issekaied.onboardingSeen';
+const SOURCE_SEEN = 'issekaied.sourceIntroSeen';
+const SHORT_CUE = (name: string) => `/audio/short/${name}.mp3`;
+const NPC_RANGE = 9;
+const LAUGH_RANGE = 6;
+const flag = (key: string): boolean => {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+};
+const setFlag = (key: string): void => {
+  try {
+    localStorage.setItem(key, '1');
+  } catch {
+    /* storage unavailable */
+  }
+};
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const engine = new Engine(canvas, true, { stencil: false, preserveDrawingBuffer: false });
@@ -129,6 +152,12 @@ function applySnapshot(snap: RoomSnapshot): void {
     hud.setSelf(self, now);
   }
   entities.applySnapshot(snap, selfId);
+  // NPC speech is local to the haunt: cut it once that haunt is out of earshot.
+  const speakingNpc = audio.speakingNpcId;
+  if (speakingNpc) {
+    const st = entities.enemyState(speakingNpc);
+    if (!st || st.state === 'banished' || distXZ(player.camera.position, st.position) > NPC_RANGE) audio.stopNpc();
+  }
   lastAdventure = snap.adventure;
   world.setPortalReady(!!snap.adventure?.portalReady);
   hud.setAdventure(snap.adventure, snap.enemies, snap.players.length, nextTarget(snap.adventure, snap.enemies));
@@ -188,25 +217,36 @@ function updateMusic(snap: RoomSnapshot): void {
   hud.setNowPlaying(audio.currentTrack ? `♪ ${audio.currentTrack.replace(/\.ogg$/, '')}` : '');
 }
 
-/** Fixed intro clip, once per haunt per page session, when it is hunting within 10 m and nothing else is speaking. */
+/** Fixed intro clip, once per canonical haunt per page session, only when it hunts within earshot (single NPC slot). */
 function maybeIntroduce(snap: RoomSnapshot): void {
   if (!self || dead || audio.speaking) return;
   const eye = player.camera.position;
   for (const e of snap.enemies) {
     if (e.state !== 'hunting' || introduced.has(e.id)) continue;
     const intro = NPC_INTROS[e.id];
-    if (!intro || distXZ(eye, e.position) > 10) continue;
-    if (audio.say({ url: intro.url, caption: intro.text, speaker: e.name })) {
+    if (!intro || distXZ(eye, e.position) > NPC_RANGE) continue;
+    if (audio.npc(e.id, intro.url, intro.text, e.name)) {
       introduced.add(e.id);
       return;
     }
   }
 }
 
+/** Only four laugh files exist; the monster render keys map to their haunt audio family. */
+const LAUGH_FAMILY: Record<string, string> = { goblin: 'nix', orc: 'raksha', beast: 'vesper' };
+
+/** Rare nearby laugh (≤ 6 m) on a real encounter beat; the single NPC slot and cooldowns keep it rare. */
+function npcLaugh(id: string, range: number): void {
+  const st = entities.enemyState(id);
+  if (!st || st.state === 'banished' || distXZ(player.camera.position, st.position) > range) return;
+  const key = spriteKeyFor(st);
+  audio.npc(id, SHORT_CUE(`laugh-${LAUGH_FAMILY[key] ?? key}`), undefined, st.name);
+}
+
+/** Gameplay invocations use only the short (≤2 s) cues; full recitations stay in Settings → Listen. */
 function invocationAudio(power: PowerId): void {
   audio.sfx.cast(power);
-  if (power === 'hanuman') audio.cue(SACRED.hanumanCue, 'Hanuman Chalisa · synthesized recitation', 'Chant');
-  if (power === 'shiva') audio.cue(SACRED.shivaCue, 'Shiva Tandava Stotram · synthesized recitation', 'Chant');
+  audio.cue(SHORT_CUE(power), `${CHANNELS[power].deity} · short invocation`, 'Chant');
 }
 
 const feetOf = (eye: Vector3) => eye.add(new Vector3(0, -1.6, 0));
@@ -215,9 +255,10 @@ function handleEvent(ev: GameEvent): void {
   if (!sessionActive()) return;
   const at = ev.position ? Vector3.FromArray(ev.position) : entities.positionOf(ev.toId ?? ev.fromId);
   const name = (id: string | undefined) => (id ? entities.enemyState(id)?.name ?? (id === selfId ? self?.name : undefined) ?? 'A hunter' : 'Someone');
-  // Server-generated speech: same-origin /api/audio/... only; anything else is ignored, failures are silent.
+  // Server-generated speech: same-origin /api/audio/... only, only from a resolved haunt within earshot, single NPC slot.
   const voiceUrl = safeServerAudioUrl(ev.audioUrl);
-  if (voiceUrl) audio.say({ url: voiceUrl, speaker: entities.enemyState(ev.fromId)?.name }, true);
+  const speakerState = entities.enemyState(ev.fromId);
+  if (voiceUrl && speakerState && distXZ(player.camera.position, speakerState.position) <= NPC_RANGE) audio.npc(ev.fromId, voiceUrl, undefined, speakerState.name);
   if (ev.fromId === selfId || ev.toId === selfId) lastCombatAt = Date.now();
 
   switch (ev.kind) {
@@ -230,7 +271,7 @@ function handleEvent(ev: GameEvent): void {
         const origin = ev.fromId === selfId ? eye : (at ?? entities.nodeOf(ev.fromId)?.position ?? null);
         if (!origin) return;
         effects.heal(feetOf(origin));
-        if (ev.fromId === selfId) audio.cue(SACRED.mrityunjaya, 'Maha Mrityunjaya mantra · synthesized recitation', 'Chant');
+        if (ev.fromId === selfId) audio.cue(SHORT_CUE('heal'), 'Maha Mrityunjaya · short recovery cue', 'Chant');
         return;
       }
       if (!ev.power) return; // every deity-power action names its channel
@@ -263,8 +304,10 @@ function handleEvent(ev: GameEvent): void {
     }
     case 'hit':
       if (at) effects.hit(ev.power, at);
-      if (ev.toId === selfId) audio.sfx.hurt();
-      else {
+      if (ev.toId === selfId) {
+        audio.sfx.hurt();
+        npcLaugh(ev.fromId, LAUGH_RANGE);
+      } else {
         if (ev.toId) entities.flashHit(ev.toId);
         audio.sfx.hit();
       }
@@ -278,6 +321,7 @@ function handleEvent(ev: GameEvent): void {
       if (at && ev.fromId !== selfId) effects.returned(at);
       const memory = entities.enemyState(ev.fromId)?.memory;
       if (self && memory?.lastHunterName === self.name) scareUntil = Date.now() + 20000;
+      npcLaugh(ev.fromId, LAUGH_RANGE);
       hud.whisper(ev.text ?? `${name(ev.fromId)} returns.`, undefined, true);
       return;
     }
@@ -404,7 +448,10 @@ function startSession(name: string): void {
       else if (status === 'offline') hud.setConnection(hadWelcome ? 'lost' : 'retrying', detail);
       else hud.setConnection('failed', detail);
       refreshInputGate(); // frozen whenever the authority is not answering
-      if (status !== 'online') player.releaseLock(); // the panel's buttons must be reachable with a real mouse
+      if (status !== 'online') {
+        player.releaseLock(); // the panel's buttons must be reachable with a real mouse
+        audio.stopNpc();
+      }
     },
     onServerError: (code, message) => hud.whisper(`${code}: ${message}`, 'server', true),
   });
@@ -433,11 +480,36 @@ function startDevPreview(): void {
   audio.setPhase('explore');
 }
 
+let cancelIntro: (() => void) | null = null;
+
 /** Enter Bellgrave from the main menu (user gesture). Pointer lock and audio start here and nowhere automatic. */
 function enter(rawName: string): void {
   audio.unlock();
   focused = true;
-  if (!sessionActive()) startSession(sanitizeName(rawName));
+  player.clearHeld(); // never carry keys held before entry
+  const name = sanitizeName(rawName);
+  const intro = rebirthModules['./rebirth-intro.ts'];
+  if (!sessionActive() && !cancelIntro && intro && !flag(ONBOARDING_SEEN)) {
+    // First entry for this guest: the rebirth intro plays before any join; input stays inactive until it is done.
+    menus.hide();
+    void intro().then((mod) => {
+      if (cancelIntro !== null || sessionActive()) return;
+      let done = false;
+      cancelIntro = mod.startRebirthIntro(() => {
+        if (done) return;
+        done = true;
+        cancelIntro = null;
+        setFlag(ONBOARDING_SEEN);
+        beginHunt(name);
+      }, { videoUrl: '/video/rebirth.mp4' });
+    });
+    return;
+  }
+  beginHunt(name);
+}
+
+function beginHunt(name: string): void {
+  if (!sessionActive()) startSession(name);
   menus.setInSession(true);
   hud.show();
   menus.hide();
@@ -455,6 +527,7 @@ function resume(): void {
   }
   audio.unlock();
   focused = true;
+  player.clearHeld(); // resume re-arms only fresh presses
   hud.show();
   menus.hide();
   audio.setPaused(false);
@@ -540,7 +613,15 @@ function holdTalk(held: boolean): void {
   s.setHeld(true); // held state is recorded first, so a release during the permission prompt leaves the mic off
   sourceUi.mic.dataset.mic = s.live && s.hasMic ? 'on' : 'off';
   // A deliberate hold connects, or upgrades a text-only session to one with the microphone.
-  if (!s.live || !s.hasMic) void s.connect(true);
+  if (!s.live || !s.hasMic) void sourceConnect(s, true, null);
+}
+
+/** One birth introduction per browser guest; afterwards only the player's own question is sent. */
+async function sourceConnect(s: SourceVoice, withMic: boolean, firstTurn: string | null): Promise<boolean> {
+  const introduce = !flag(SOURCE_SEEN);
+  const ok = await s.connect(withMic, firstTurn, introduce);
+  if (ok && introduce) setFlag(SOURCE_SEEN);
+  return ok;
 }
 // Release must reach us even when a focused control stops bubbling: capture phase, plus the Source field taking focus.
 window.addEventListener('keyup', (e) => {
@@ -556,7 +637,7 @@ async function sourceAsk(text: string | null): Promise<void> {
   if (!turn) return;
   if (!s.live) {
     sourceLog('you', turn, true);
-    await s.connect(false, turn);
+    await sourceConnect(s, false, turn);
     return;
   }
   if (text === null) s.askDirections();
@@ -586,6 +667,8 @@ sourceUi.text.addEventListener('focus', () => holdTalk(false));
 
 /** Ends the hunt: stops network/preview/voices, drops server-owned views, resets local state, shows the title. */
 function leaveToTitle(): void {
+  cancelIntro?.(); // a cancelled intro never joins
+  cancelIntro = null;
   window.clearInterval(inputTimer);
   inputTimer = 0;
   sendIdle();
@@ -637,7 +720,10 @@ player.onLockChange = (locked) => {
     menus.show('pause');
     audio.setPaused(true);
   }
-  if (!locked) holdTalk(false); // releasing the mouse also releases push-to-talk
+  if (!locked) {
+    holdTalk(false); // releasing the mouse also releases push-to-talk
+    audio.stopNpc();
+  }
   refreshInputGate();
 };
 player.onLockError = (reason) => {
@@ -654,6 +740,7 @@ player.onFocusLost = () => {
   refreshInputGate();
   sendIdle();
   holdTalk(false); // never keep transmitting after focus leaves
+  audio.stopNpc();
   if (dead || connectionPanelVisible() || menus.current !== null) return; // those screens already own the resume path
   player.releaseLock();
   menus.setPauseStatus('The game lost focus. Click Resume hunting to continue.');
