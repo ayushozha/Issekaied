@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>Issekaied · Bellgrave</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="game" tabindex="0" aria-label="Bellgrave courtyard"></canvas>
+
+    <div id="hud" class="hud" hidden>
+      <div id="status" class="status" data-kind="connecting">Connecting…</div>
+      <div id="offline" class="offline" hidden>
+        <strong>OFFLINE PREVIEW</strong> — backend at <code>/ws</code> is unreachable. Haunts, hits and
+        banishments are simulated in this browser only; nothing is shared or persisted. Retrying…
+      </div>
+
+      <div class="crosshair" aria-hidden="true"></div>
+      <div id="target" class="target" hidden>
+        <span id="target-name"></span>
+        <span id="target-channel"></span>
+      </div>
+
+      <section class="panel vitals">
+        <div class="row"><span id="self-name">Hunter</span><span id="self-hp-text">100</span></div>
+        <div class="bar hp"><i id="self-hp"></i></div>
+        <div class="invocation">
+          <img id="invocation-portrait" alt="" hidden />
+          <div class="grow">
+            <div class="label">Last invocation</div>
+            <div id="invocation-name">—</div>
+            <div class="bar cd"><i id="invocation-cd"></i></div>
+          </div>
+        </div>
+        <ul id="channels" class="channels" aria-label="Channel readiness (automatic)"></ul>
+      </section>
+
+      <section class="panel players">
+        <div class="label">Hunters in Bellgrave</div>
+        <ul id="players"></ul>
+      </section>
+
+      <section class="panel enemies">
+        <div class="label">Haunts</div>
+        <div id="enemies"></div>
+      </section>
+
+      <ul id="whispers" class="whispers" aria-live="polite"></ul>
+
+      <div id="invoke-cue" class="invoke-cue" hidden>
+        <img id="invoke-cue-img" alt="" />
+        <span id="invoke-cue-text"></span>
+      </div>
+
+      <div id="death" class="death" hidden>
+        <h2>You have fallen</h2>
+        <p>Bellgrave holds its breath. Awaiting your return…</p>
+      </div>
+      <div id="flash" class="flash" aria-hidden="true"></div>
+      <div class="hint">WASD move · mouse look · click attack · Shift sprint · Esc menu</div>
+    </div>
+
+    <div id="menu" class="menu">
+      <div class="card">
+        <h1>Issekaied</h1>
+        <p class="sub">Bellgrave · a haunted courtyard · first playable</p>
+        <label for="name">Hunter name</label>
+        <input id="name" maxlength="16" autocomplete="off" placeholder="Hunter" />
+        <button id="enter" type="button">Enter Bellgrave</button>
+        <p id="menu-status" class="menu-status"></p>
+        <ul class="controls">
+          <li><b>WASD</b> move · <b>Shift</b> sprint · <b>Esc</b> release the mouse</li>
+          <li><b>Mouse</b> look — the pointer locks only after you press Enter</li>
+          <li><b>Click</b> attack — the deity suited to the targeted haunt answers on its own</li>
+        </ul>
+        <p class="fine">
+          Ganesha, Hanuman, Shiva and Vishnu are sources of aid, never foes. Haunts remember who
+          banished them and return with new tactics.
+        </p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
