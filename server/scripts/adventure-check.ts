@@ -1,6 +1,6 @@
 /**
  * Two real WebSocket clients against a running Phase 2 server (use the provider-free fixture):
- *   DISABLE_BOOST=1 bun --env-file=<abs>/.claude-orchestration/phase2-fixture.env server/src/index.ts
+ *   DISABLE_BOOST=1 bun --env-file=/absolute/path/to/fixture.env server/src/index.ts
  *   bun server/scripts/adventure-check.ts --url ws://127.0.0.1:8791/ws --room phase2-probe
  *
  * Bram stays at the safe gate sending deliberate zero-movement input and must never move or be hit.
