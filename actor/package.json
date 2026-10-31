@@ -1,0 +1,21 @@
+{
+  "name": "issekaied-actors",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Terse Durable Actors for Issekaied: persistent ghost memory and global deity context.",
+  "scripts": {
+    "dev": "terse actor dev",
+    "generate": "terse actor generate",
+    "deploy": "terse deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "terse-sdk": "^0.14.9"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.9",
+    "typescript": "^5.9.0"
+  }
+}
