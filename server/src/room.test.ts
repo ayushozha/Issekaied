@@ -105,6 +105,77 @@ describe('membership and identity', () => {
     expect(again.ok && again.player.hp).toBe(40);
     expect(room.snapshot().players.map((p) => p.id)).toEqual([a.id]);
   });
+
+  test('a reloaded client restarts at seq 1: rejoin resets the per-connection sequence (live hunter)', () => {
+    const { room, clock, join, tick } = makeRoom();
+    const a = join(KEY_A, 'Ayla');
+    a.x = 0;
+    room.applyInput(a.id, { type: 'input', v: 1, seq: 4698, moveX: 0, moveZ: 1, yaw: 0, pitch: 0, sprint: true });
+    tick(3);
+    a.hp = 55;
+    a.skillCooldowns = { primary: clock.now() + 5000 };
+    const cooldownsBefore = { ...a.cooldowns };
+    const [x, z] = [a.x, a.z];
+    expect(a.lastSeq).toBe(4698);
+    expect(a.move.z).toBe(1);
+
+    const again = room.join(KEY_A, 'Ayla'); // no leave in between: the old socket is still live
+    expect(again.ok && again.reconnected).toBe(true);
+    expect(again.ok && again.player).toBe(a);
+    expect(a.lastSeq).toBe(0);
+    expect(a.ackSeq).toBe(0);
+    expect(a.active).toBe(false); // stays safe until the new connection sends intent
+    expect(a.move).toEqual({ x: 0, z: 0, sprint: false });
+    expect(a.speed).toBe(0);
+    tick(2);
+    expect([a.x, a.z]).toEqual([x, z]); // old movement does not carry over
+    expect(a.hp).toBe(55);
+    expect(a.cooldowns).toEqual(cooldownsBefore);
+    expect(a.skillCooldowns.primary).toBeGreaterThan(clock.now());
+
+    // Fresh connection seq 1 is accepted immediately and moves the hunter.
+    room.applyInput(a.id, { type: 'input', v: 1, seq: 1, moveX: 0, moveZ: 1, yaw: 0, pitch: 0, sprint: true });
+    expect(a.ackSeq).toBe(1);
+    expect(a.active).toBe(true);
+    tick(3);
+    expect(a.z).toBeGreaterThan(z);
+
+    // Duplicate / replayed seq within the new connection is still rejected.
+    room.applyInput(a.id, { type: 'input', v: 1, seq: 2, moveX: 1, moveZ: 0, yaw: 0, pitch: 0, sprint: false });
+    room.applyInput(a.id, { type: 'input', v: 1, seq: 1, moveX: -1, moveZ: 0, yaw: 0, pitch: 0, sprint: true });
+    room.applyInput(a.id, { type: 'input', v: 1, seq: 2, moveX: -1, moveZ: 0, yaw: 0, pitch: 0, sprint: true });
+    expect(a.ackSeq).toBe(2);
+    expect(a.move).toEqual({ x: 1, z: 0, sprint: false });
+  });
+
+  test('a parked hunter rejoining also restarts at seq 1 and keeps HP and cooldowns', () => {
+    const { room, clock, join, tick } = makeRoom();
+    const a = join(KEY_A, 'Ayla');
+    room.applyInput(a.id, { type: 'input', v: 1, seq: 4698, moveX: 1, moveZ: 0, yaw: 0, pitch: 0, sprint: true });
+    tick(2);
+    a.hp = 40;
+    a.skillCooldowns = { secondary: clock.now() + 9000 };
+    room.leave(a.id);
+    expect(room.players.size).toBe(0);
+
+    const again = room.join(KEY_A, 'Ayla');
+    expect(again.ok && again.player).toBe(a);
+    expect(room.players.get(a.id)).toBe(a);
+    expect(a.lastSeq).toBe(0);
+    expect(a.active).toBe(false);
+    expect(a.move).toEqual({ x: 0, z: 0, sprint: false });
+    expect(a.hp).toBe(40);
+    expect(a.skillCooldowns.secondary).toBeGreaterThan(clock.now());
+    expect(room.snapshot().players[0]).toMatchObject({ id: a.id, ackSeq: 0, active: false });
+
+    const x = a.x;
+    room.applyInput(a.id, { type: 'input', v: 1, seq: 1, moveX: 1, moveZ: 0, yaw: 0, pitch: 0, sprint: false });
+    tick(3);
+    expect(a.ackSeq).toBe(1);
+    expect(a.x).toBeGreaterThan(x);
+    room.applyInput(a.id, { type: 'input', v: 1, seq: 1, moveX: -1, moveZ: 0, yaw: 0, pitch: 0, sprint: false }); // replay
+    expect(a.move.x).toBe(1);
+  });
 });
 
 describe('deliberate movement', () => {

@@ -148,6 +148,12 @@ describe('websocket room', () => {
     const latest = [...a2.messages].reverse().find((m) => m.type === 'snapshot');
     expect(latest && latest.type === 'snapshot' ? latest.snapshot.players.length : 0).toBe(2);
 
+    // The reloaded client counts from seq 1 again (the old socket reached seq 2): the room must accept it.
+    a2.send({ type: 'input', v: 1, seq: 1, moveX: 0, moveZ: 0, yaw: 1, pitch: 0, sprint: false });
+    const acked = (m: ServerMessage): m is Extract<ServerMessage, { type: 'snapshot' }> =>
+      m.type === 'snapshot' && m.snapshot.players.some((p) => p.id === wa.selfId && p.ackSeq === 1 && p.active);
+    await a2.waitFor(acked);
+
     a2.ws.close();
     b.ws.close();
     await Promise.all([a2.closed, b.closed]);
@@ -192,5 +198,88 @@ describe('websocket room', () => {
     await c.closed;
     await Bun.sleep(50);
     expect(resolveSourcePlayer(rooms, KEY_C, 'bellgrave')).toBeNull(); // parked, no open socket
+  });
+});
+
+describe('superseded socket boundary', () => {
+  /** Capture the websocket handlers Bun.serve was given and drive fake sockets whose close never fires: late frames from a replaced connection. */
+  test('late input, cast and interact from a replaced socket never reach the room; the fresh socket works', () => {
+    type Handlers = { message(ws: unknown, raw: string): void; close(ws: unknown): void };
+    const realServe = Bun.serve;
+    let handlers: Handlers | undefined;
+    const fakeSocket = () => {
+      const sent: ServerMessage[] = [];
+      const closes: number[] = [];
+      return {
+        sent,
+        closes,
+        readyState: 1,
+        data: { playerId: null as string | null, roomId: null as string | null, tokens: 120, refilledAt: Date.now(), drops: 0, bad: 0 },
+        send: (raw: string) => void sent.push(JSON.parse(raw) as ServerMessage),
+        close: (code: number) => void closes.push(code), // deferred: the server-side close handler is not invoked
+        subscribe: () => {},
+      };
+    };
+    const localRooms = new Map<string, Room>();
+    const room = new Room('attic', { capacity: 2, tickRate: 20, nextEventId: () => 'e', onEvent: () => {} });
+    localRooms.set('attic', room);
+    let local: GameServer | undefined;
+    try {
+      (Bun as { serve: typeof Bun.serve }).serve = ((options: Parameters<typeof Bun.serve>[0]) => {
+        handlers = (options as unknown as { websocket: Handlers }).websocket;
+        return realServe(options);
+      }) as typeof Bun.serve;
+      local = startGameServer({ host: '127.0.0.1', port: 0, rooms: localRooms, tickRate: 20, snapshotRate: 10, health: () => ({ ok: true }) });
+    } finally {
+      (Bun as { serve: typeof Bun.serve }).serve = realServe;
+    }
+    try {
+      if (!handlers) throw new Error('Bun.serve websocket handlers were not captured');
+      const old = fakeSocket();
+      const fresh = fakeSocket();
+      const join = JSON.stringify({ type: 'join', v: 1, roomId: 'attic', name: 'Ayla', playerKey: KEY_A });
+      handlers.message(old, join);
+      expect(old.sent[0]?.type).toBe('welcome');
+      const id = playerIdFor(KEY_A);
+      const p = room.players.get(id)!;
+      handlers.message(old, JSON.stringify({ type: 'input', v: 1, seq: 4698, moveX: 0, moveZ: 1, yaw: 0, pitch: 0, sprint: true }));
+      expect(p.lastSeq).toBe(4698);
+
+      handlers.message(fresh, join);
+      expect(fresh.sent[0]?.type).toBe('welcome');
+      expect(old.closes).toEqual([4001]);
+      expect(p.lastSeq).toBe(0);
+      expect(p.move).toEqual({ x: 0, z: 0, sprint: false });
+
+      // Late frames from the replaced socket, including one that still believes it is bound to the hunter.
+      const lateInput = JSON.stringify({ type: 'input', v: 1, seq: 4699, moveX: 1, moveZ: 0, yaw: 2, pitch: 0, sprint: true });
+      const lateCast = JSON.stringify({ type: 'cast', v: 1, seq: 4700, aim: [0, 0, 1] });
+      const lateInteract = JSON.stringify({ type: 'interact', v: 1, seq: 4701, target: 'respawn' });
+      for (const data of [old.data, { ...old.data, playerId: id, roomId: 'attic' }]) {
+        old.data = data;
+        for (const raw of [lateInput, lateCast, lateInteract]) handlers.message(old, raw);
+      }
+      expect(p.lastSeq).toBe(0);
+      expect(p.move).toEqual({ x: 0, z: 0, sprint: false });
+      expect(p.yaw).toBe(0);
+      expect(p.lastCastAt).toBe(0);
+      expect(p.active).toBe(false);
+
+      // The fresh socket drives the same hunter from seq 1.
+      handlers.message(fresh, JSON.stringify({ type: 'input', v: 1, seq: 1, moveX: 1, moveZ: 0, yaw: 2, pitch: 0, sprint: true }));
+      expect(p.lastSeq).toBe(1);
+      expect(p.move).toEqual({ x: 1, z: 0, sprint: true });
+      expect(p.active).toBe(true);
+      handlers.message(fresh, JSON.stringify({ type: 'cast', v: 1, seq: 2, aim: [0, 0, 1] }));
+      expect(p.lastCastAt).toBeGreaterThan(0);
+
+      // The old socket's close finally arrives: it must not park the hunter who just reattached.
+      handlers.close(old);
+      expect(room.players.get(id)).toBe(p);
+      expect(p.connected).toBe(true);
+      expect(local.metrics().sockets).toBe(1);
+    } finally {
+      local?.stop();
+    }
   });
 });

@@ -3,10 +3,9 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera';
 import { PointLight } from '@babylonjs/core/Lights/pointLight';
-import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import type { GlowLayer } from '@babylonjs/core/Layers/glowLayer';
 import type { CombatAction, Vec3 } from '../../shared/protocol';
-import { WORLD, loadKit, placeKit, resolveCollisions } from './world';
+import { WORLD, resolveCollisions } from './world';
 
 const LOOK_SPEED = 0.0022;
 const MAX_PITCH = 1.45;
@@ -47,7 +46,8 @@ export class LocalPlayer {
   private bobPhase = 0;
   private speed = 0;
 
-  constructor(scene: Scene, private readonly canvas: HTMLCanvasElement, glow: GlowLayer | null = null) {
+  /** `_glow` is kept for the existing call signature; the cosmetic first-person rig now lives in EffectsLayer. */
+  constructor(scene: Scene, private readonly canvas: HTMLCanvasElement, _glow: GlowLayer | null = null) {
     this.pos = Vector3.FromArray(WORLD.spawn);
     this.camera = new FreeCamera('hunter-camera', this.pos.clone(), scene);
     this.camera.minZ = 0.1;
@@ -129,8 +129,6 @@ export class LocalPlayer {
       else if (e.button === 2) this.onAction?.('secondary');
     });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // only the game canvas
-
-    void this.attachViewmodel(scene, glow);
   }
 
   /** Drops every held key and any residual speed: blur, pause, defeat, disconnect, teardown. */
@@ -231,18 +229,5 @@ export class LocalPlayer {
     this.pos.set(p[0], p[1], p[2]);
     this.history.length = 0;
     this.speed = 0;
-  }
-
-  /** Small hand lantern in the lower right of the view (Kenney CC0 prop); purely cosmetic, skipped on failure. */
-  private async attachViewmodel(scene: Scene, glow: GlowLayer | null): Promise<void> {
-    const kit = await loadKit(scene, 'lantern-candle.glb');
-    if (!kit) return;
-    const holder = placeKit(kit, 'viewmodel-lantern', Vector3.Zero(), -0.4, 0.45);
-    holder.parent = this.camera;
-    holder.position.set(0.42, -0.36, 0.95);
-    for (const m of holder.getChildMeshes()) {
-      m.isPickable = false;
-      if (m instanceof Mesh) glow?.addExcludedMesh(m);
-    }
   }
 }

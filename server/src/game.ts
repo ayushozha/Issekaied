@@ -230,6 +230,7 @@ export function startGameServer(opts: GameServerOptions): GameServer {
         }
         if (msg.type === 'join') return join(ws, msg);
         if (!d.playerId || !d.roomId) return sendError(ws, 'not_joined', 'send a join message first');
+        if (sockets.get(`${d.roomId}:${d.playerId}`) !== ws) return; // superseded socket: late frames never reach the room
         const room = opts.rooms.get(d.roomId);
         if (!room) return;
         if (msg.type === 'input') room.applyInput(d.playerId, msg);

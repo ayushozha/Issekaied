@@ -251,26 +251,13 @@ export class Room {
     const id = playerIdFor(key);
     const now = this.now();
     const live = this.players.get(id);
-    if (live) {
-      live.connected = true;
-      live.lastSeen = now;
-      live.lastInputAt = now;
-      live.name = name;
-      this.onSignal({ type: 'join', player: live, reconnected: true });
-      return { ok: true, player: live, reconnected: true };
-    }
+    if (live) return this.reattach(live, name, now);
     const parked = this.parked.get(id);
     if (parked) {
       if (this.connectedCount >= this.opts.capacity) return { ok: false, code: 'room_full' };
       this.parked.delete(id);
-      parked.connected = true;
-      parked.lastSeen = now;
-      parked.lastInputAt = now;
-      parked.name = name;
-      parked.move = { x: 0, z: 0, sprint: false };
       this.players.set(id, parked);
-      this.onSignal({ type: 'join', player: parked, reconnected: true });
-      return { ok: true, player: parked, reconnected: true };
+      return this.reattach(parked, name, now);
     }
     if (this.connectedCount >= this.opts.capacity) return { ok: false, code: 'room_full' };
     const slot = this.nextSlot++;
@@ -305,6 +292,26 @@ export class Room {
     this.players.set(id, player);
     this.onSignal({ type: 'join', player, reconnected: false });
     return { ok: true, player, reconnected: false };
+  }
+
+  /**
+   * Same guest key on a new connection: keep the hunter (id, slot, position, HP, power, cooldowns, ward) but
+   * restart the per-connection state. A reloaded client counts seq from 1 again, so the old high-water mark would
+   * silently reject every fresh input; the old movement must not carry over and the hunter stays safely inactive
+   * until the new connection sends deliberate intent.
+   */
+  private reattach(p: RoomPlayer, name: string, now: number): JoinResult {
+    p.connected = true;
+    p.lastSeen = now;
+    p.lastInputAt = now;
+    p.name = name;
+    p.lastSeq = 0;
+    p.ackSeq = 0;
+    p.active = false;
+    p.move = { x: 0, z: 0, sprint: false };
+    p.speed = 0;
+    this.onSignal({ type: 'join', player: p, reconnected: true });
+    return { ok: true, player: p, reconnected: true };
   }
 
   /** Disconnect: the hunter leaves the snapshot but can reattach with the same guest key for a while. */

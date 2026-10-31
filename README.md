@@ -1,14 +1,37 @@
-# Issekaied — The Dead Remember
+# Issekaied — The Dead Remember · [Play live demo ↗](https://issekaied.ayushojha.com)
 
 A first-person Halloween adventure built around **stateful characters** and **agent-to-agent communication**: the ghosts you banish remember your name, share warnings, and come back with a grudge.
+
+**Terse Durable Actors × Agent Relay** · OpenAI · Mastra · Supabase · Freestyle · Superserve
+
+[Play in your browser](https://issekaied.ayushojha.com) · [Watch the two-minute demo](https://issekaied.ayushojha.com/video/Issekaied-2min-submission-v2.mp4) · [Sponsor integrations](#sponsor-integrations) · [Run locally](#run-locally)
+
+## Sponsor integrations
+
+| Track technology | What it powers in the game |
+| --- | --- |
+| **Terse Durable Actors — Stateful Apps** | Each ghost retains its grudges and encounter history. Divine actors share persistent context, and the Source remembers player arrivals, deaths and banishments. The actual actor runtime is hosted on Freestyle. |
+| **Agent Relay — Agent-to-Agent Communication** | Ghosts send warnings through the enemy hivemind; recipients can change tactics. The pantheon shares invocation outcomes, and the Source relays canonical world facts through the self-hosted Relaycast engine. |
+
+| Sponsor | What it powers in the game |
+| --- | --- |
+| **OpenAI** | NPC intelligence and individual voices, plus two-way Realtime voice and text with the Source. |
+| **Mastra** | Event-triggered NPC agents produce structured dialogue and validated tactics grounded in encounter events. |
+| **Supabase** | Player records, gameplay events, searchable lore and the live hunter leaderboard. Unique event IDs prevent duplicate history; backend-only tables are protected by RLS. |
+| **Freestyle** | An isolated, persistent VM runs the real Terse actor service separately from the game server. |
+| **Superserve** | Disposable sandboxes run bounded tactic and encounter-scoring jobs; validated results inform returning ghosts and echo encounters. |
+
+**The demo loop:** banish a ghost → **Terse** saves who did it → **Agent Relay** warns other ghosts → the world reacts when you return. Ask the **OpenAI Realtime** Source for directions, and see the recorded hunt on the **Supabase** leaderboard.
+
+[Integration code and runtime evidence](#track-technology-in-the-running-game) · [Demo script](docs/DEMO-SCRIPT-2MIN.md) · [Verification notes](docs/DEMO.md) · [Asset credits](docs/MAP-ASSETS.md)
 
 <p align="center"><img src="docs/assets/submission-cover.jpg" width="480" alt="Issekaied concept cover: the Returned hunter, divine protectors and Bellgrave ghosts"></p>
 
 *Project key art. Gameplay uses a 3D courtyard, illustrated ghost impostors and live interface elements.*
 
-[Play the demo](https://issekaied.ayushojha.com) · [Watch the revised two-minute video](https://issekaied.ayushojha.com/video/Issekaied-2min-submission-v2.mp4) · [Demo script](docs/DEMO-SCRIPT-2MIN.md) · [Verification notes](docs/DEMO.md) · [Asset credits](docs/MAP-ASSETS.md)
+![Actual Bellgrave gameplay: stone cathedral, crimson windows, Halloween props and the live hunter interface](docs/assets/bellgrave-gameplay.png)
 
-**Stateful Apps:** Terse actors preserve each ghost's history, divine context and the Source ledger. **Agent-to-Agent Communication:** Agent Relay delivers warnings and outcomes that other characters can act on.
+*Actual browser gameplay, captured from the verified build: the authored cathedral, textured paths, illustrated enemies and live interface.*
 
 ## The hunt
 
@@ -44,19 +67,7 @@ After a banishment, Agent Relay carries a grounded warning through the enemy hiv
 
 Open [issekaied.ayushojha.com](https://issekaied.ayushojha.com), enter a hunter name and join Bellgrave. Participants share the live room and see one another. A browser guest key keeps identity stable between visits; names alone are not identity. The server enforces a configured capacity of 50 hunters, but 50 simultaneous real browsers have not been load-tested. The hunter ledger records accepted joins and gameplay events in Supabase.
 
-## How the sponsors are used
-
-| Technology | Responsibility in Issekaied |
-| --- | --- |
-| **Terse Durable Actors** | Persistent `Ghost`, `Deity` and `Source` actors hold grudges, cited encounter history, global divine context and player statistics. Actor methods remain short and do not wait on external services. |
-| **Agent Relay** | Real pantheon and enemy-hivemind channels carry warnings and shared context between participants. A recipient can change tactics after another ghost's warning. The deployment can use the official self-hosted Relaycast engine. |
-| **OpenAI** | NPC decisions and individual voices; Realtime voice/text conversation with The Source. Models are selected through environment configuration. |
-| **Mastra** | Event-triggered NPC agent orchestration with structured dialogue, validated strategy choices and supporting event IDs. |
-| **Supabase** | Canonical gameplay events, guest-player records and searchable lore. Unique event IDs prevent duplicate history; RLS protects the backend-only tables. |
-| **Freestyle** | Hosts the actual Terse actor runtime on an isolated persistent VM, separate from the VPS game server. |
-| **Superserve** | Executes trusted, bounded tactic/encounter-scoring jobs in disposable sandboxes. Results are validated before affecting a returning ghost or echo encounter. |
-
-### Track technology in the running game
+## Track technology in the running game
 
 **Terse is a real remote runtime here.** [`actor/src/`](actor/src/) defines the durable ghost, deity and Source actors. [`server/src/integrations/memory.ts`](server/src/integrations/memory.ts) calls them through `terse-sdk` actor stubs. The actor service runs on a Freestyle VM; the main game API runs on the VPS. Ghost banishments and grudges, shared Shiva/Vishnu context and the Source ledger survive independently of a room's lifetime. This demo self-hosts Terse's local/dev runtime, rather than claiming managed Terse Cloud or replicated production infrastructure.
 
@@ -79,7 +90,7 @@ flowchart LR
 
 ## Run locally
 
-Use Bun and configure the server-side values in `.env.example`. In PowerShell, from the repository root:
+Use Bun. Copy `.env.example` to the ignored `.env` file, then put your server-side configuration and keys in `.env`. In PowerShell, from the repository root:
 
 ```powershell
 Copy-Item .env.example .env
@@ -105,7 +116,7 @@ Keep management credentials and provider keys out of browser code and `VITE_` va
 
 ## Verification and limits
 
-The backend passes 31 focused tests. Network checks cover 50 unique enemies, authoritative health-cost powers, stale-input expiry and leaderboard persistence across a restart; the integrated client build passes. OpenAI Realtime connected in the public browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for exact evidence and limits.
+The backend passes 34 focused tests, including reconnect sequence resets and rejection of late input from replaced sockets. Network checks cover 50 unique enemies, authoritative health-cost powers, stale-input expiry and leaderboard persistence across a restart; the integrated client build passes. OpenAI Realtime connected in the public browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for exact evidence and limits.
 
 Both frontend and backend are live at the demo URL. The VPS deployment script builds immutable releases from `main`, checks the Source routes before activation and preserves the previous release for rollback. See [deployment instructions](deploy/vps/README.md).
 

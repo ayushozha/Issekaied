@@ -68,7 +68,7 @@ const hud = new Hud({
 const player = new LocalPlayer(scene, canvas, glow);
 const entities = new EntityLayer(scene, glow);
 entities.onAssetIssue = (text) => hud.whisper(text, undefined, true);
-const effects = new EffectsLayer(scene);
+const effects = new EffectsLayer(scene, glow);
 
 const RECITATIONS: Record<Recitation, { url: string; caption: string }> = {
   hanuman: { url: SACRED.hanumanFull, caption: 'Hanuman Chalisa · synthesized recitation' },
