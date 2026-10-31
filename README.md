@@ -85,7 +85,9 @@ Keep management credentials and provider keys out of browser code and `VITE_` va
 
 ## Verification and limits
 
-The backend has passed 27 focused tests and a 36-check, two-client full-quest network run. Browser checks cover safe idle spawning, movement, discrete attacks, wards, shrine interaction, explicit respawn and teardown. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for the distinction between isolated and live checks.
+The backend has passed 28 focused tests and a 36-check, two-client full-quest network run. Browser checks cover safe idle spawning, movement, discrete attacks, wards, shrine interaction, explicit respawn and teardown. OpenAI Realtime connected in the browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for the distinction between isolated and live checks.
+
+Both frontend and backend are live at the demo URL. The VPS deployment script builds immutable releases from `main`, checks the Source routes before activation and preserves the previous release for rollback. See [deployment instructions](deploy/vps/README.md).
 
 A separate 50-client, 15-second synthetic smoke is not a claim of 50 real browser players or production readiness. Guest identity belongs to the browser key, not the display name. The hosted actor service uses Terse's local/dev runtime on Freestyle with demo lifecycle limits. Source deduplication and retained player records are bounded at 5,000; canonical event history remains in Supabase.
 

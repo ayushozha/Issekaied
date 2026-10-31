@@ -69,6 +69,26 @@ if (config.openai.apiKey && config.openai.realtimeModel && config.openai.realtim
 const director = createDirector({ rooms, eventLog, memory, channels, minds, voice, rehearsal, source: source ?? undefined, log });
 signals.subscribe((roomId, s) => director.handle(roomId, s));
 
+/**
+ * Hosting metadata only: the primary API runs on the VPS; Terse/Source actors are hosted on Freestyle when
+ * TERSE_ACTOR_URL names a *.style.dev host. Hostname only (never path, token or userinfo); runtime
+ * reachability is reported by the adjacent `terse` status, not here. Invalid or missing URLs never throw.
+ */
+const freestyleHosting = (): Record<string, unknown> => {
+  const raw = config.terse.actorUrl;
+  if (!raw) return { mode: 'not-configured', api: 'vps', detail: 'TERSE_ACTOR_URL missing; no actor host configured' };
+  let hostname = '';
+  try {
+    hostname = new URL(raw).hostname.toLowerCase();
+  } catch {
+    return { mode: 'external-host-unknown', api: 'vps', detail: 'TERSE_ACTOR_URL is not a parseable URL' };
+  }
+  const onFreestyle = hostname === 'style.dev' || hostname.endsWith('.style.dev');
+  return onFreestyle
+    ? { mode: 'actor-host', api: 'vps', actorHost: hostname, role: 'Terse + Source actors on Freestyle (style.dev); see integrations.terse for reachability' }
+    : { mode: 'external-host-unknown', api: 'vps', actorHost: hostname, role: 'actor host is not a style.dev domain' };
+};
+
 const health = () => ({
   ok: true,
   service: pkg.name,
@@ -110,7 +130,7 @@ const health = () => ({
     voice: voice.status(),
     superserve: rehearsal.status(),
     source: source ? source.status() : { mode: 'not-configured', reason: sourceDisabledReason },
-    freestyle: { mode: 'not-deployed', detail: 'hosting is coordinator-owned; the server does not use FREESTYLE_API_KEY' },
+    freestyle: freestyleHosting(),
   },
   director: director.status(),
   config: presence(),
