@@ -1,6 +1,6 @@
 # NPC introduction audio
 
-These four AI-generated voice clips are fixed fictional introductions for Bellgrave. They do not describe real player history or demonstrate reactive ghost memory. They were generated with the OpenAI Speech API at `POST /v1/audio/speech`; all four requests returned HTTP 200 with `audio/mpeg` content.
+These four voice clips use speech synthesized with artificial intelligence. They are fixed fictional introductions for Bellgrave. They do not describe real player history or demonstrate reactive ghost memory. They were generated with the OpenAI Speech API at `POST /v1/audio/speech`; all four requests returned HTTP 200 with `audio/mpeg` content.
 
 | NPC | Voice | File | Duration | Bytes |
 | --- | --- | --- | --- | --- |
