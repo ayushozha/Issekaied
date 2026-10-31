@@ -24,6 +24,6 @@ Voice assignments were read from `server/config/npcs.json` without editing that 
 
 The ignored `.audio-orchestration/intro-generation.json` contains the exact delivery instructions, generation time, response metadata, and the current Speech API deprecation notice. No credentials are recorded in this document or that report.
 
-These assets have been generated and inspected; browser playback and reactive NPC integration are separate runtime checks. Disclose AI-generated voices in the game interface when they are enabled.
+These assets have been generated and inspected; browser playback and reactive NPC integration are separate runtime checks. Disclose voices synthesized with artificial intelligence in the game interface when they are enabled.
 
 Official reference: [OpenAI text-to-speech guide](https://developers.openai.com/api/docs/guides/text-to-speech).
