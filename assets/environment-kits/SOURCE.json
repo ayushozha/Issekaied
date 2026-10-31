@@ -1,0 +1,119 @@
+{
+  "retrievedAtUtc": "2026-10-31T19:15:33.3026246Z",
+  "purpose": "Original creator environment asset kits for Issekaied. These are model collections requiring scene assembly, lighting, collision setup and game integration.",
+  "validation": {
+    "maximumUncompressedArchiveBytes": 209715200,
+    "duplicateDestinationPathsRejected": true,
+    "archiveEntriesCheckedBeforeExtraction": true,
+    "glTFAndGlbResourceChecks": [
+      {
+        "id": "kenney-graveyard",
+        "fileCounts": {
+          "glb": 91,
+          "gltf": 0,
+          "fbx": 91,
+          "obj": 91,
+          "bin": 0,
+          "png": 96
+        },
+        "validatedLocalResourceReferences": 91,
+        "externalTextureFiles": [
+          "Models/GLB format/Textures/colormap.png"
+        ],
+        "embeddedImagesAcrossModels": 0,
+        "modelsWithAnimationClips": 7,
+        "glTFResourcesMissing": 0,
+        "validatedGlb2Headers": 91
+      },
+      {
+        "id": "kaykit-halloween",
+        "fileCounts": {
+          "glb": 0,
+          "gltf": 63,
+          "fbx": 0,
+          "obj": 70,
+          "bin": 63,
+          "png": 3
+        },
+        "validatedLocalResourceReferences": 126,
+        "externalTextureFiles": [
+          "addons/kaykit_halloween_bits/Assets/gltf/halloweenbits_texture.png"
+        ],
+        "embeddedImagesAcrossModels": 0,
+        "modelsWithAnimationClips": 0,
+        "glTFResourcesMissing": 0,
+        "validatedGlb2Headers": 0
+      }
+    ],
+    "originalZipArchivesPreserved": true,
+    "canonicalExtractionPathsConfinedToEachKit": true,
+    "existingFilesOverwritten": false,
+    "symlinksRejected": true
+  },
+  "packages": [
+    {
+      "id": "kenney-graveyard",
+      "name": "Kenney Graveyard Kit",
+      "version": "5.0",
+      "sourcePage": "https://kenney.nl/assets/graveyard-kit",
+      "downloadLinkEndpoint": "https://kenney.nl/download-link/6173736574732f6772617665796172642d6b6974",
+      "downloadNote": "Official page now issues expiring signed download URLs. The stale indexed media ZIP URL returned HTML; that response is preserved separately as kenney-graveyard-stale-download-response.html. The ZIP here was obtained using the official download-link endpoint.",
+      "archive": "kenney_graveyard-kit_5.0.zip",
+      "archiveBytes": 3623408,
+      "sha256": "1a93613f2e5675f3310acf49ec9ef13ae7adeb756ac3b205bfb6cc9311a81062",
+      "validatedArchiveEntries": 474,
+      "expandedBytes": 12597443,
+      "extractedTo": "kenney-graveyard",
+      "modelCounts": {
+        "obj": 91,
+        "fbx": 91,
+        "gltf": 0,
+        "glb": 91
+      },
+      "license": {
+        "attributionRequired": false,
+        "commercialUseAllowed": true,
+        "spdx": "CC0-1.0",
+        "includedFile": "kenney-graveyard/License.txt"
+      },
+      "notes": [
+        "Catalog advertises 90 assets; inspected archive actually contains 91 model files per format.",
+        "Includes character-ghost.glb, crypt parts, gravestones, fences, trees, lamps and previews.",
+        "PNG total includes per-model previews and three format-specific colormap copies."
+      ]
+    },
+    {
+      "id": "kaykit-halloween",
+      "name": "KayKit Halloween Bits",
+      "version": "1.0 GitHub free subset",
+      "sourcePage": "https://kaylousberg.itch.io/halloween-bits",
+      "repository": "https://github.com/KayKit-Game-Assets/KayKit-Halloween-Bits-1.0",
+      "gitCommit": "6dc69bf6b2fa766a985754f35ec6a0324090e6c6",
+      "downloadUrl": "https://github.com/KayKit-Game-Assets/KayKit-Halloween-Bits-1.0/archive/6dc69bf6b2fa766a985754f35ec6a0324090e6c6.zip",
+      "archive": "kaykit-halloween-bits-6dc69bf.zip",
+      "archiveBytes": 1172887,
+      "sha256": "17b6155ba9aab19cc0c39468c3dd6791aaa99078e44c8e76f68f7af2d1309bba",
+      "validatedArchiveEntries": 277,
+      "expandedBytes": 3269808,
+      "extractedTo": "kaykit-halloween",
+      "strippedArchiveRoot": "KayKit-Halloween-Bits-1.0-6dc69bf6b2fa766a985754f35ec6a0324090e6c6/",
+      "modelCounts": {
+        "obj": 70,
+        "fbx": 0,
+        "gltf": 63,
+        "glb": 0
+      },
+      "license": {
+        "attributionRequired": false,
+        "commercialUseAllowed": true,
+        "spdx": "CC0-1.0",
+        "includedFile": "kaykit-halloween/addons/kaykit_halloween_bits/Assets/LICENSE.txt"
+      },
+      "notes": [
+        "This pinned GitHub archive contains glTF/BIN and OBJ/MTL subsets; it does not contain FBX despite the general product page listing FBX as an available format.",
+        "Keep each glTF with its matching BIN and halloweenbits_texture.png.",
+        "Three texture copies accompany different export folders; these are not three distinct texture designs."
+      ]
+    }
+  ]
+}

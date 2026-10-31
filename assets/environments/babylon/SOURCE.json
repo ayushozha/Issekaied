@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/BabylonJS/Assets",
+  "revision": "ffbd501c388cbf3ba29936851ef4b36bada145dc",
+  "revisionCommittedAt": "2026-10-27T16:35:08Z",
+  "retrievedAtUtc": "2026-10-31T19:14:51.005Z",
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "policySource": "https://github.com/BabylonJS/Assets/blob/ffbd501c388cbf3ba29936851ef4b36bada145dc/README.md",
+    "legalTextSource": "https://github.com/BabylonJS/Assets/blob/ffbd501c388cbf3ba29936851ef4b36bada145dc/LICENSE",
+    "overrideCheck": {
+      "treeUrl": "https://api.github.com/repos/BabylonJS/Assets/git/trees/ffbd501c388cbf3ba29936851ef4b36bada145dc?recursive=1",
+      "treeTruncated": false,
+      "scope": "Root policy, meshes-level license/readme files, and filenames associated with haunted_house or valleyvillage",
+      "applicableOverridesFound": []
+    },
+    "individualOriginalAuthors": "Not identified in inspected upstream records or GLB asset metadata",
+    "changes": "None; downloaded bytes match pinned upstream Git blobs"
+  },
+  "files": [
+    {
+      "file": "UPSTREAM-README.md",
+      "upstreamPath": "README.md",
+      "url": "https://raw.githubusercontent.com/BabylonJS/Assets/ffbd501c388cbf3ba29936851ef4b36bada145dc/README.md",
+      "repositoryFileUrl": "https://github.com/BabylonJS/Assets/blob/ffbd501c388cbf3ba29936851ef4b36bada145dc/README.md",
+      "bytes": 1093,
+      "sha256": "168b688c6848e22134ee9fc6f9ec325ca0b4d4f9be6e4ec86b411edf62b226f0",
+      "gitBlobSha1": "252a85492fadf0731bc288212697dcc61b154317"
+    },
+    {
+      "file": "UPSTREAM-LICENSE.txt",
+      "upstreamPath": "LICENSE",
+      "url": "https://raw.githubusercontent.com/BabylonJS/Assets/ffbd501c388cbf3ba29936851ef4b36bada145dc/LICENSE",
+      "repositoryFileUrl": "https://github.com/BabylonJS/Assets/blob/ffbd501c388cbf3ba29936851ef4b36bada145dc/LICENSE",
+      "bytes": 18650,
+      "sha256": "7e7170e3cebf88a9f60c7b8421418323c09304da1af4d5e90f4da1dc1c8a2661",
+      "gitBlobSha1": "2f244ac814036ecd9ba9f69782e89ce6b1dca9eb"
+    },
+    {
+      "file": "valleyvillage.glb",
+      "upstreamPath": "meshes/valleyvillage.glb",
+      "url": "https://raw.githubusercontent.com/BabylonJS/Assets/ffbd501c388cbf3ba29936851ef4b36bada145dc/meshes/valleyvillage.glb",
+      "repositoryFileUrl": "https://github.com/BabylonJS/Assets/blob/ffbd501c388cbf3ba29936851ef4b36bada145dc/meshes/valleyvillage.glb",
+      "bytes": 9492256,
+      "sha256": "1fa0ae03e0d18e111d4fc5bdb71849690e38d5cf9ecdf9eebb9477cde74a5559",
+      "gitBlobSha1": "7b36f8f162d966abc4fbf90c814b744df68d5588",
+      "glb": {
+        "magic": "glTF",
+        "version": 2,
+        "declaredLengthMatches": true,
+        "chunks": [
+          {
+            "type": "JSON",
+            "byteLength": 36468
+          },
+          {
+            "type": "BIN",
+            "byteLength": 9455760
+          }
+        ],
+        "asset": {
+          "generator": "BabylonJS",
+          "version": "2.0"
+        },
+        "nodeCount": 22,
+        "meshCount": 21,
+        "primitiveCount": 40,
+        "primitiveModes": {
+          "4": 40
+        },
+        "uniqueMeshTriangleCount": 1258,
+        "defaultSceneTriangleCount": 1258,
+        "materialCount": 6,
+        "imageCount": 5,
+        "extensionsUsed": [],
+        "extensionsRequired": [],
+        "compression": {
+          "dracoUsed": false,
+          "meshoptUsed": false
+        },
+        "externalUris": [],
+        "embeddedDataUriCount": 0,
+        "missingExternalFiles": [],
+        "structuralChecks": "Header/chunk/bufferView/image-reference checks passed; triangle counts derived from accessor counts, without decoding geometry."
+      }
+    },
+    {
+      "file": "haunted_house.glb",
+      "upstreamPath": "meshes/haunted_house.glb",
+      "url": "https://raw.githubusercontent.com/BabylonJS/Assets/ffbd501c388cbf3ba29936851ef4b36bada145dc/meshes/haunted_house.glb",
+      "repositoryFileUrl": "https://github.com/BabylonJS/Assets/blob/ffbd501c388cbf3ba29936851ef4b36bada145dc/meshes/haunted_house.glb",
+      "bytes": 38976908,
+      "sha256": "f3becee42bc890e39502babe6cc4a4ea13e335a2f5a52e7909aebbfc1edf8269",
+      "gitBlobSha1": "8bbe0fa92abc8ecb9512a088a6fe94eee43f2525",
+      "glb": {
+        "magic": "glTF",
+        "version": 2,
+        "declaredLengthMatches": true,
+        "chunks": [
+          {
+            "type": "JSON",
+            "byteLength": 5164
+          },
+          {
+            "type": "BIN",
+            "byteLength": 38971716
+          }
+        ],
+        "asset": {
+          "version": "2.0",
+          "generator": "Microsoft GLTF Exporter 2.4.2.1"
+        },
+        "nodeCount": 4,
+        "meshCount": 2,
+        "primitiveCount": 2,
+        "primitiveModes": {
+          "4": 2
+        },
+        "uniqueMeshTriangleCount": 9997,
+        "defaultSceneTriangleCount": 9997,
+        "materialCount": 2,
+        "imageCount": 11,
+        "extensionsUsed": [
+          "KHR_materials_pbrSpecularGlossiness"
+        ],
+        "extensionsRequired": [],
+        "compression": {
+          "dracoUsed": false,
+          "meshoptUsed": false
+        },
+        "externalUris": [],
+        "embeddedDataUriCount": 0,
+        "missingExternalFiles": [],
+        "structuralChecks": "Header/chunk/bufferView/image-reference checks passed; triangle counts derived from accessor counts, without decoding geometry."
+      }
+    }
+  ],
+  "limitations": [
+    "No browser rendering, performance, collision, navigation, or gameplay validation has been performed.",
+    "GLB structural checks and accessor counts are not a complete glTF specification validator.",
+    "No geometry or texture optimization was applied."
+  ]
+}

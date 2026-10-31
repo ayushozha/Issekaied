@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "Bellgrave",
+  "bounds": { "minX": -32, "maxX": 32, "minZ": -32, "maxZ": 32 },
+  "spawn": [0, 1.7, -23],
+  "playerRadius": 0.45,
+  "walkSpeed": 5.0,
+  "sprintSpeed": 7.5,
+  "obstacles": [
+    { "id": "chapel", "x": 0, "z": 11, "width": 12, "depth": 10, "height": 12 },
+    { "id": "crypt-west", "x": -15, "z": -2, "width": 5, "depth": 6, "height": 4 },
+    { "id": "crypt-east", "x": 16, "z": 2, "width": 5, "depth": 6, "height": 4 },
+    { "id": "fountain", "x": 0, "z": -6, "width": 4, "depth": 4, "height": 1.2 }
+  ],
+  "enemySpawns": [
+    { "id": "morrow", "name": "Morrow", "species": "ghost", "level": 1, "position": [-11, 1.2, 6] },
+    { "id": "nix", "name": "Nix", "species": "ghoul", "level": 3, "position": [-18, 1.2, 15] },
+    { "id": "vesper", "name": "Vesper", "species": "ghost", "level": 6, "position": [12, 1.2, 14] },
+    { "id": "raksha", "name": "Raksha", "species": "rakshasa", "level": 9, "position": [19, 1.2, -12] }
+  ]
+}

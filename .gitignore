@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+.*orchestration/
+*.log
+*.tsbuildinfo
+output/
+*-stale-download-response.html
+# Keep original multi-format downloads locally; version the browser-ready models and licenses.
+assets/environment-kits/*.zip
+assets/environment-kits/**/Models/FBX format/
+assets/environment-kits/**/Models/OBJ format/
+assets/environment-kits/**/Assets/obj/
