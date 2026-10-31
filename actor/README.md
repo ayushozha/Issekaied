@@ -5,6 +5,7 @@ Persistent ghost memory and deity context for the multiplayer game, implemented 
 | Actor | ID scheme | Persisted state |
 | --- | --- | --- |
 | `Ghost` | Enemy ID: `morrow`, `nix`, `vesper`, `raksha` | Banishments, kills, hunter grudges, event-linked episodes, tactic and lore |
+| `Source` | `source` globally | arrivals, deaths, banishments, per-player statistics and recent canonical facts |
 | `Deity` | `ganesha.<roomId>` and `hanuman.<roomId>` per room; `shiva` and `vishnu` globally across rooms/games | Invocations, banishments, hunters, rooms and recent event IDs |
 
 Actor IDs must contain only ASCII letters, digits, `.`, `_` or `-`; they must not be `.` or `..`. Colons are rejected by the SDK and runtime. Keep room IDs within that character set.

@@ -46,3 +46,15 @@ Superserve's proposed role follows its documented microVM/command-execution prod
 - Include our own recitations of verified traditional Hanuman Chalisa, Shiva Tandava Stotram and Maha Mrityunjaya texts, with provenance and AI-voice disclosure. Do not redistribute an unlicensed commercial rendition.
 - Hanuman Chalisa accompanies Hanuman's automatic combat invocation, Shiva Tandava accompanies Shiva's invocation, and Maha Mrityunjaya supplies a protection/healing cue. These are requested mechanics pending implementation and runtime verification.
 - NPC introductions are separate fixed fictional assets; they are not evidence of dynamic memory or live AI dialogue.
+
+## Frozen presentation scope - one Bellgrave adventure
+
+The courtyard and chapel approach are the single presentation map. Safe gate -> Morrow, Nix and Vesper encounters -> Raksha boss altar -> one echo trial at the courtyard portal. Reuse this same map; no second floor or new world.
+
+- Deliberate WASD movement only; stop input on blur, menu or defeat. No automatic respawn loop or auto-attacking.
+- LMB primary attack, RMB ward/charged action, Q automatic level-based incantation, R recovery mantra, E shrine/portal/respawn interaction, Escape pause. No deity picker.
+- Three sigils unlock the boss; enemies patrol locally, aggro within their encounter area and leash back. Gate spawn is safe.
+- No full-screen damage/invocation flashes. Restrained effects and readable non-glowing nameplates, with reduced motion/flashes enabled by default.
+- Match the generated ghosts with transparent art impostors in the 3D world and use the generated title backdrop. These are 2D game sprites, not claimed rigged 3D characters.
+- Terse persistent ghost memory is the central demonstration: recorded defeat, named recall, changed return tactics and memory surviving service restart. Relay warns peers; global Shiva/Vishnu actors remember prior hunters.
+- Superserve validates a bounded tactics/encounter variation for the same-map echo portal; Freestyle hosts actual Terse actors. Network services stay outside the real-time tick.
