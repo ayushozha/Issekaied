@@ -1,6 +1,6 @@
 # Issekaied submission video
 
-[Watch the final video](Issekaied-2min-submission.mp4) · [Script and shot list](../DEMO-SCRIPT-2MIN.md) · [Narration MP3](narration-2min.mp3) · [Narration WAV master](narration-master.wav) · [Play Issekaied](https://issekaied.ayushojha.com)
+[Watch the final video](https://issekaied.ayushojha.com/video/Issekaied-2min-submission.mp4) · [Local video](../../assets/video/Issekaied-2min-submission.mp4) · [Script and shot list](../DEMO-SCRIPT-2MIN.md) · [Narration MP3](narration-2min.mp3) · [Narration WAV master](narration-master.wav) · [Play Issekaied](https://issekaied.ayushojha.com)
 
 The finished cut is exactly **120.000 seconds**, 1280×720, 30 fps, H.264 video with AAC audio. Full FFmpeg decode passed. The two main track themes are stateful characters through Terse Durable Actors and agent-to-agent communication through Agent Relay. Freestyle, OpenAI, Mastra, Supabase and Superserve appear with their actual roles.
 

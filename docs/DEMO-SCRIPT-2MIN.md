@@ -1,6 +1,6 @@
 # Two-minute demo: Issekaied — The Dead Remember
 
-[Finished two-minute video](demo-video/Issekaied-2min-submission.mp4) · [Current narration](demo-video/narration-2min.mp3) · [WAV editing master](demo-video/narration-master.wav) · [Video provenance](demo-video/README.md)
+[Finished two-minute video](https://issekaied.ayushojha.com/video/Issekaied-2min-submission.mp4) · [Current narration](demo-video/narration-2min.mp3) · [WAV editing master](demo-video/narration-master.wav) · [Video provenance](demo-video/README.md)
 
 Delivery: expressive male British storyteller. Begin with a monstrous laugh, then whisper. Build into curious, mischievous enthusiasm. Emphasize **stateful characters** and **agent-to-agent communication**. Bracketed directions are performance notes, not spoken words. Record the deployed game and its real responses.
 
