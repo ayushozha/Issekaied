@@ -13,3 +13,4 @@ assets/environment-kits/*.zip
 assets/environment-kits/**/Models/FBX format/
 assets/environment-kits/**/Models/OBJ format/
 assets/environment-kits/**/Assets/obj/
+.gstack/
