@@ -40,9 +40,9 @@ html, body { margin: 0; height: 100%; background: var(--fog); overflow: hidden; 
 .sigils li.boss { margin-left: auto; font-size: 18px; }
 
 /* The Source: compact, right side, clickable whenever the mouse is free (paused or defeated). */
-.source { right: 18px; top: 200px; width: 250px; pointer-events: auto; }
+.panel.source { right: 18px; top: 200px; width: 250px; pointer-events: auto; } /* panel only: `.source` must not style `li.source` */
 .source-log { list-style: none; margin: 6px 0; padding: 0; max-height: 132px; overflow-y: auto; font-size: 12px; line-height: 1.35; }
-.source-log li { margin-top: 4px; color: #d2c9b4; }
+.source-log li { margin-top: 4px; color: #d2c9b4; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .source-log li.source { color: #efe6cf; }
 .source-log li.you { color: #b9c9d8; }
 .source-log li.system { color: var(--muted); font-style: italic; }

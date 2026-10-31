@@ -91,6 +91,8 @@ Both frontend and backend are live at the demo URL. The VPS deployment script bu
 
 A separate 50-client, 15-second synthetic smoke is not a claim of 50 real browser players or production readiness. Guest identity belongs to the browser key, not the display name. The hosted actor service uses Terse's local/dev runtime on Freestyle with demo lifecycle limits. Source deduplication and retained player records are bounded at 5,000; canonical event history remains in Supabase.
 
+Active room positions and quest progress reset when the game API restarts; durable ghost history and recorded events remain in Terse and Supabase. Text questions, controlled spoken input and streamed Source replies passed public acceptance. A physical microphone still needs a human check.
+
 Music credits and optimized-file provenance are in [audio credits](assets/audio/optimized/CREDITS.md). Voices and traditional recitations are synthesized with artificial intelligence; pronunciation and Vedic intonation are not human-certified. [Hanuman](assets/audio/hanuman/PROVENANCE.md), [Shiva](assets/audio/shiva/PROVENANCE.md) and [Maha Mrityunjaya](assets/audio/mantra/PROVENANCE.md) source records are included.
 
 ## Repository and license
