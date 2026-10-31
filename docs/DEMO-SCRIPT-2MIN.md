@@ -1,8 +1,8 @@
 # Two-minute demo: Issekaied — The Dead Remember
 
-[Generated male American narration](demo-audio/Issekaied-2min-male-american.mp3) · [Exact two-minute WAV master](demo-audio/Issekaied-2min-male-american.wav) · [Voice and processing notes](demo-audio/README.md)
+[Halloween narration — male British](demo-audio/Issekaied-2min-male-british-halloween.mp3) · [Exact two-minute WAV master](demo-audio/Issekaied-2min-male-british-halloween.wav) · [Voice and processing notes](demo-audio/README.md)
 
-Delivery: male American voice; curious, lightly mischievous, conversational. Let real gameplay and NPC replies breathe. Bracketed directions are performance notes, not spoken words. Record the finished deployed game and its real responses.
+Delivery: expressive male British voice; eerie and hushed at the opening, then curious, mischievous and increasingly energetic. Let real gameplay and NPC replies breathe. Bracketed directions are performance notes, not spoken words. Record the finished deployed game and its real responses.
 
 | Time | Performance and narration | Screen |
 | --- | --- | --- |
