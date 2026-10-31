@@ -5,20 +5,92 @@ import { PointLight } from '@babylonjs/core/Lights/pointLight';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial';
+import { MultiMaterial } from '@babylonjs/core/Materials/multiMaterial';
+import type { Material } from '@babylonjs/core/Materials/material';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture';
 import { Constants } from '@babylonjs/core/Engines/constants';
 import type { AssetContainer } from '@babylonjs/core/assetContainer';
-import { WORLD, flatMaterial, hierarchySize, loadKit, placeKit, softParticleTexture } from './world';
+import { WORLD, flatMaterial, hierarchySize, loadKit, softParticleTexture } from './world';
 
 /**
  * Halloween dressing for the existing Bellgrave courtyard. Purely decorative: nothing here is
  * pickable, nothing touches WORLD/collision, and every position keeps clear of the spawn, the
  * spawn→chapel path, the shrine altar and the echo portal. Steady glows only (no flicker).
+ *
+ * Palette: the kit's bright toy colours are pulled toward the crimson-cathedral reference (charcoal
+ * iron, aged bone, burnt-ochre pumpkins, candle wax, worn brass) through owned material clones; the
+ * shared kit containers and their original materials are never touched because world.ts places the
+ * same kits elsewhere.
  */
 
 const KITS = ['character-skeleton', 'pumpkin-carved', 'pumpkin-tall-carved', 'pumpkin', 'pumpkin-tall', 'candle', 'candle-multiple', 'lantern-candle'] as const;
 type KitName = (typeof KITS)[number];
 type Kits = Record<KitName, AssetContainer | null>;
+
+/** Role tint multiplied into the kit palette texture, plus a steady inner ember for carved faces. */
+interface Role { tint: Color3; emissive?: Color3 }
+const ROLES: Record<KitName, Role> = {
+  'character-skeleton': { tint: new Color3(0.84, 0.76, 0.6) }, // aged bone
+  'pumpkin-carved': { tint: new Color3(0.8, 0.64, 0.46), emissive: new Color3(0.16, 0.06, 0.01) }, // burnt ochre, candle inside
+  'pumpkin-tall-carved': { tint: new Color3(0.8, 0.64, 0.46), emissive: new Color3(0.16, 0.06, 0.01) },
+  pumpkin: { tint: new Color3(0.76, 0.6, 0.44) },
+  'pumpkin-tall': { tint: new Color3(0.76, 0.6, 0.44) },
+  candle: { tint: new Color3(0.9, 0.84, 0.7) }, // candle wax / brass
+  'candle-multiple': { tint: new Color3(0.9, 0.84, 0.7) },
+  'lantern-candle': { tint: new Color3(0.6, 0.56, 0.53) }, // charcoal iron; the halo keeps the flame warm
+};
+
+/** Owned, cached overrides keyed by original material and role; disposed with the dressing root. */
+class Overrides {
+  private readonly cache = new Map<string, Material>();
+
+  for(original: Material, role: KitName): Material {
+    const key = `${role}:${original.uniqueId}`;
+    let m = this.cache.get(key);
+    if (m) return m;
+    if (original instanceof MultiMaterial) {
+      const multi = new MultiMaterial(`halloween-${role}:${original.name}`, original.getScene());
+      multi.subMaterials = original.subMaterials.map((s) => (s ? this.for(s, role) : null));
+      m = multi;
+    } else if (original instanceof PBRMaterial) {
+      const { tint, emissive } = ROLES[role];
+      const p = original.clone(`halloween-${role}:${original.name}`); // keeps the palette texture and alpha settings
+      p.albedoColor = original.albedoColor.multiply(tint);
+      p.metallic = 0;
+      p.roughness = 0.92;
+      p.specularIntensity = 0.35; // matte: no plastic highlight under the lamps
+      if (emissive) p.emissiveColor = emissive;
+      m = p;
+    } else {
+      return original; // unknown material type: leave the shared one alone rather than guess
+    }
+    this.cache.set(key, m);
+    return m;
+  }
+
+  /** Re-points every mesh under `holder` (clones, never instances) at its owned override. */
+  apply(holder: TransformNode, role: KitName): void {
+    for (const mesh of holder.getChildMeshes(false)) if (mesh.material) mesh.material = this.for(mesh.material, role);
+  }
+
+  dispose(): void {
+    for (const m of this.cache.values()) m.dispose(false, false); // never the shared kit textures
+    this.cache.clear();
+  }
+}
+
+/** Like world.placeKit but always clones meshes so `overrides` can swap their materials per role. */
+function placeOwned(container: AssetContainer, name: string, pos: Vector3, yaw: number, scale: number, role: KitName, overrides: Overrides): TransformNode {
+  const holder = new TransformNode(name, container.scene);
+  const entries = container.instantiateModelsToScene((n) => `${name}:${n}`, false, { doNotInstantiate: true });
+  for (const r of entries.rootNodes) r.parent = holder;
+  holder.position.copyFrom(pos);
+  holder.rotation.y = yaw;
+  holder.scaling.setAll(scale);
+  overrides.apply(holder, role);
+  return holder;
+}
 
 /** [kit, x, z, yaw, scale, glow?] — glow adds a steady warm halo (jack-o'-lanterns, candles). */
 type Prop = [KitName, number, number, number, number, boolean?];
@@ -88,11 +160,13 @@ async function dress(scene: Scene): Promise<void> {
     ['pumpkin-tall', rx - 3.6, rz - 2.8, 1.4, 2.0],
   ];
 
+  const overrides = new Overrides();
+  root.onDisposeObservable.addOnce(() => overrides.dispose());
   const glowSpots: Vector3[] = [];
   for (const [kit, x, z, yaw, scale, glow] of props) {
     const c = kits[kit];
     if (!c) continue;
-    const holder = placeKit(c, `halloween-${kit}`, new Vector3(x, 0, z), yaw, scale);
+    const holder = placeOwned(c, `halloween-${kit}`, new Vector3(x, 0, z), yaw, scale, kit, overrides);
     holder.parent = root;
     settle(holder);
     if (glow) glowSpots.push(new Vector3(x, glowHeight(kit, scale), z));
@@ -111,7 +185,7 @@ async function dress(scene: Scene): Promise<void> {
       [-38.6, -3.2, facing(-38.6, -3.2, -43, -7), 'sit'],
       [-39.2, -11.4, facing(-39.2, -11.4, -43, -7), 'sit'],
     ];
-    for (const [x, z, yaw, pose] of spots) placeSkeleton(skel, root, x, z, yaw, pose);
+    for (const [x, z, yaw, pose] of spots) placeSkeleton(skel, root, x, z, yaw, pose, overrides);
   }
 
   buildGlows(scene, root, glowSpots);
@@ -140,7 +214,7 @@ function glowHeight(kit: KitName, scale: number): number {
   return 0.17 * scale; // pumpkin centre
 }
 
-function placeSkeleton(kit: AssetContainer, root: TransformNode, x: number, z: number, yaw: number, pose: string): void {
+function placeSkeleton(kit: AssetContainer, root: TransformNode, x: number, z: number, yaw: number, pose: string, overrides: Overrides): void {
   const name = `halloween-skeleton-${x.toFixed(1)}`;
   const holder = new TransformNode(name, kit.scene);
   holder.parent = root;
@@ -160,6 +234,7 @@ function placeSkeleton(kit: AssetContainer, root: TransformNode, x: number, z: n
   holder.scaling.setAll(s);
   holder.position.set(x, Number.isFinite(min.y) ? Math.max(0, -min.y * s) : 0, z);
   holder.rotation.y = yaw;
+  overrides.apply(holder, 'character-skeleton');
   for (const m of holder.getChildMeshes(false)) m.isPickable = false;
 }
 
@@ -169,11 +244,11 @@ function buildGlows(scene: Scene, root: TransformNode, spots: Vector3[]): void {
   const mat = new StandardMaterial('halloween-glow-mat', scene);
   mat.diffuseTexture = softParticleTexture(scene);
   mat.useAlphaFromDiffuseTexture = true;
-  mat.diffuseColor = new Color3(1, 0.55, 0.18);
+  mat.diffuseColor = new Color3(1, 0.62, 0.22); // candle gold, as in the reference stairs of candles
   mat.specularColor = Color3.Black();
   mat.disableLighting = true;
   mat.alphaMode = Constants.ALPHA_ADD;
-  mat.alpha = 0.32;
+  mat.alpha = 0.3;
   for (const [i, p] of spots.entries()) {
     const halo = MeshBuilder.CreatePlane(`halloween-glow-${i}`, { size: 0.9 }, scene);
     halo.billboardMode = TransformNode.BILLBOARDMODE_ALL;
@@ -189,7 +264,7 @@ function buildWebs(scene: Scene, root: TransformNode): { freeze(): void } {
   const tex = new DynamicTexture('halloween-web', 256, scene, true);
   const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
   ctx.clearRect(0, 0, 256, 256);
-  ctx.strokeStyle = 'rgba(215,225,240,0.85)';
+  ctx.strokeStyle = 'rgba(214,202,178,0.85)'; // dusty aged thread, not blue-white
   ctx.lineWidth = 1.6;
   const spokes = 9;
   const angles = Array.from({ length: spokes }, (_, i) => (i / spokes) * Math.PI * 2 + (i % 2 ? 0.08 : -0.05));
@@ -220,8 +295,8 @@ function buildWebs(scene: Scene, root: TransformNode): { freeze(): void } {
   const mat = new StandardMaterial('halloween-web-mat', scene);
   mat.diffuseTexture = tex;
   mat.useAlphaFromDiffuseTexture = true;
-  mat.diffuseColor = new Color3(0.7, 0.75, 0.85);
-  mat.emissiveColor = new Color3(0.32, 0.35, 0.42); // readable in the dark, never glaring
+  mat.diffuseColor = new Color3(0.72, 0.68, 0.6);
+  mat.emissiveColor = new Color3(0.3, 0.28, 0.25); // readable in the dark, never glaring
   mat.specularColor = Color3.Black();
   mat.disableLighting = true;
   mat.backFaceCulling = false;

@@ -31,11 +31,27 @@ const MIN_PORTRAIT_DISTANCE = 3;
 const CAMERA_SUPPRESS = 1.2;
 const CAMERA_NEAR = 3;
 
-/** Camera-local rest pose of the first-person viewmodel (x right, y up, z forward). */
-const VM_REST_POS = new Vector3(0.3, -0.3, 0.58);
-const VM_REST_ROT = new Vector3(0.12, -0.12, 0.1);
+/**
+ * Camera-local rest pose of the first-person viewmodel (x right, y up, z forward). The hand sits in
+ * the lower right; the trident leans forward and outward so its head stays mid-right, below the HUD,
+ * and the centre of the view stays clear. The lantern hangs small in the lower left.
+ */
+const VM_REST_POS = new Vector3(0.5, -0.4, 0.66);
+const VM_REST_ROT = new Vector3(0.1, -0.1, 0.08);
+const VM_WEAPON_REST_ROT = new Vector3(0.62, 0.05, -0.2);
+const VM_LANTERN_POS = new Vector3(-0.46, -0.28, 0.72); // whole cage and flame stay above the bottom edge
+const VM_LANTERN_ROT = new Vector3(0.05, 0.3, 0.06);
+const VM_LANTERN_SCALE = 0.82;
 
-interface Viewmodel { root: TransformNode; weapon: TransformNode; arc: Mesh; arcMat: StandardMaterial; mats: StandardMaterial[]; meshes: Mesh[] }
+interface Viewmodel {
+  root: TransformNode;
+  weapon: TransformNode;
+  lantern: TransformNode;
+  arc: Mesh;
+  arcMat: StandardMaterial;
+  mats: StandardMaterial[];
+  meshes: Mesh[];
+}
 
 interface BurstOptions { size?: number; speed?: number; life?: number; gravity?: number; spread?: number }
 
@@ -66,11 +82,30 @@ export class EffectsLayer {
   private disposed = false;
   private vm: Viewmodel | null = null;
   private vmFinish: (() => void) | null = null;
+  private vmIdle: Observer<Scene> | null = null;
+  private vmClock = 0;
 
-  constructor(private readonly scene: Scene) {
+  constructor(private readonly scene: Scene, private readonly glow: { addExcludedMesh(mesh: Mesh): void } | null = null) {
     this.soft = softParticleTexture(scene);
     this.motionQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
     scene.onDisposeObservable.addOnce(() => this.dispose());
+    // One bounded idle observer: builds the viewmodel once a camera exists, shows it only while the
+    // hunter actually holds the pointer lock (never on the title/menu view), and adds a quiet sway.
+    this.vmIdle = scene.onBeforeRenderObservable.add(() => {
+      if (this.disposed) return;
+      const vm = this.viewmodel();
+      if (!vm) return;
+      const inPlay = typeof document !== 'undefined' && document.pointerLockElement !== null;
+      if (vm.root.isEnabled() !== inPlay) {
+        vm.root.setEnabled(inPlay);
+        vm.lantern.setEnabled(inPlay);
+      }
+      if (!inPlay || this.reducedMotion) return;
+      this.vmClock += Math.min(0.1, scene.getEngine().getDeltaTime() / 1000);
+      const k = this.vmClock;
+      if (!this.vmFinish) vm.root.position.y = VM_REST_POS.y + 0.006 * Math.sin(k * 1.6); // breathing, only at rest
+      vm.lantern.rotation.z = VM_LANTERN_ROT.z + 0.035 * Math.sin(k * 1.1);
+    });
   }
 
   /** Additive: force reduced motion on/off; pass null to follow the OS/browser preference again. */
@@ -203,12 +238,18 @@ export class EffectsLayer {
     this.timers.clear();
     for (const finish of [...this.active]) finish();
     this.active.clear();
+    if (this.vmIdle) this.scene.onBeforeRenderObservable.remove(this.vmIdle);
+    this.vmIdle = null;
     this.disposeViewmodel();
   }
 
   // ---- first-person viewmodel ------------------------------------------------------------------
 
-  /** One bounded camera-attached hand + gilded trident staff + a swing arc. Built lazily, rebuilt if the camera changes. */
+  /**
+   * One bounded camera-attached cosmetic rig: leather-gloved hand on a dark iron trident with brass
+   * fittings (lower right), a small ornate lantern (lower left) and a swing arc. Built lazily once a
+   * camera exists, rebuilt if the camera changes. ~40 small primitive meshes, 7 materials, no lights.
+   */
   private viewmodel(): Viewmodel | null {
     const cam = this.scene.activeCamera;
     if (!cam || this.disposed) return null;
@@ -219,50 +260,155 @@ export class EffectsLayer {
     root.parent = cam;
     root.position.copyFrom(VM_REST_POS);
     root.rotation.copyFrom(VM_REST_ROT);
-    const mat = (name: string, diffuse: Color3, emissive: Color3) => {
+    const mat = (name: string, diffuse: Color3, emissive: Color3, specular: Color3, power = 48) => {
       const m = new StandardMaterial(name, s);
       m.diffuseColor = diffuse;
-      m.emissiveColor = emissive; // low: lit by the moon, readable but never glowing
-      m.specularColor = new Color3(0.15, 0.12, 0.08);
+      m.emissiveColor = emissive; // low: lit by the moon and the hand lantern, readable, never glowing
+      m.specularColor = specular;
+      m.specularPower = power;
       m.fogEnabled = false;
       return m;
     };
-    const cloth = mat('fx-vm-cloth', new Color3(0.32, 0.22, 0.1), new Color3(0.07, 0.05, 0.03));
-    const skin = mat('fx-vm-glove', new Color3(0.2, 0.14, 0.1), new Color3(0.05, 0.035, 0.025));
-    const gold = mat('fx-vm-gold', new Color3(0.75, 0.55, 0.2), new Color3(0.18, 0.12, 0.03));
+    // Dark leather and cloth: the hunter's own lantern light sits close, so diffuse must stay deep or it reads light brown.
+    const leather = mat('fx-vm-leather', new Color3(0.085, 0.055, 0.04), new Color3(0.025, 0.016, 0.01), new Color3(0.07, 0.055, 0.045), 20);
+    const cloth = mat('fx-vm-cloth', new Color3(0.12, 0.09, 0.065), new Color3(0.025, 0.018, 0.012), new Color3(0.03, 0.025, 0.02), 12);
+    const iron = mat('fx-vm-iron', new Color3(0.17, 0.165, 0.17), new Color3(0.035, 0.035, 0.04), new Color3(0.35, 0.35, 0.38), 64);
+    const brass = mat('fx-vm-brass', new Color3(0.58, 0.42, 0.17), new Color3(0.12, 0.08, 0.025), new Color3(0.6, 0.48, 0.28), 72);
+    const glass = mat('fx-vm-glass', new Color3(0.6, 0.45, 0.3), new Color3(0.28, 0.16, 0.06), new Color3(0.3, 0.25, 0.2), 32);
+    glass.alpha = 0.38;
+    glass.backFaceCulling = false;
+    const flame = mat('fx-vm-flame', Color3.Black(), new Color3(0.95, 0.56, 0.22), Color3.Black());
+    flame.disableLighting = true; // restrained warm flame: a small emissive bead, no bloom (excluded from glow)
     const meshes: Mesh[] = [];
     const add = (m: Mesh, material: StandardMaterial, parent: TransformNode) => {
       m.material = material;
       m.parent = parent;
       m.isPickable = false;
       m.renderingGroupId = 1; // drawn after the world (depth cleared) so it never clips into walls
+      this.glow?.addExcludedMesh(m);
       meshes.push(m);
       return m;
     };
-    // Sleeve + gloved fist, angled up from the lower right.
-    const sleeve = add(MeshBuilder.CreateCylinder('fx-vm-sleeve', { diameterTop: 0.11, diameterBottom: 0.15, height: 0.42, tessellation: 10 }, s), cloth, root);
-    sleeve.rotation.x = Math.PI / 2 - 0.35;
-    sleeve.position.set(0.02, -0.07, -0.16);
-    const fist = add(MeshBuilder.CreateSphere('fx-vm-fist', { diameter: 0.13, segments: 8 }, s), skin, root);
-    fist.scaling.set(1, 0.85, 1.15);
-    fist.position.set(0, 0, 0.06);
-    // Staff held upright through the fist, trident head above.
+    const cyl = (name: string, dTop: number, dBot: number, h: number, tess: number, material: StandardMaterial, parent: TransformNode, x: number, y: number, z: number) => {
+      const m = add(MeshBuilder.CreateCylinder(name, { diameterTop: dTop, diameterBottom: dBot, height: h, tessellation: tess }, s), material, parent);
+      m.position.set(x, y, z);
+      return m;
+    };
+    const ring = (name: string, d: number, thick: number, material: StandardMaterial, parent: TransformNode, x: number, y: number, z: number) => {
+      const m = add(MeshBuilder.CreateTorus(name, { diameter: d, thickness: thick, tessellation: 16 }, s), material, parent);
+      m.position.set(x, y, z);
+      return m;
+    };
+    const stud = (parent: TransformNode, x: number, y: number, z: number, d = 0.012) => {
+      const m = add(MeshBuilder.CreateSphere('fx-vm-stud', { diameter: d, segments: 6 }, s), brass, parent);
+      m.position.set(x, y, z);
+      return m;
+    };
+
+    // ---- gloved hand: forearm cuff with seams/straps/studs, palm, curled fingers and a thumb over the grip
+    const sleeve = cyl('fx-vm-sleeve', 0.1, 0.14, 0.34, 12, cloth, root, 0.02, -0.09, -0.18);
+    sleeve.rotation.x = Math.PI / 2 - 0.4;
+    const cuff = cyl('fx-vm-cuff', 0.125, 0.15, 0.13, 12, leather, root, 0.01, -0.035, -0.06);
+    cuff.rotation.x = Math.PI / 2 - 0.4;
+    const strapA = ring('fx-vm-strap', 0.14, 0.012, leather, root, 0.01, -0.02, -0.03);
+    strapA.rotation.x = Math.PI / 2 - 0.4;
+    const strapB = ring('fx-vm-strap', 0.15, 0.012, leather, root, 0.015, -0.055, -0.1);
+    strapB.rotation.x = Math.PI / 2 - 0.4;
+    const seam = ring('fx-vm-seam', 0.147, 0.005, brass, root, 0.012, -0.038, -0.065);
+    seam.rotation.x = Math.PI / 2 - 0.4;
+    stud(root, 0.055, 0.0, -0.025);
+    stud(root, -0.04, 0.012, -0.03);
+    stud(root, 0.062, -0.04, -0.095);
+    const palm = add(MeshBuilder.CreateBox('fx-vm-palm', { width: 0.085, height: 0.06, depth: 0.11 }, s), leather, root);
+    palm.position.set(0, 0.012, 0.02);
+    palm.rotation.set(-0.15, 0, 0.1);
+    for (let i = 0; i < 4; i++) {
+      // Fingers curl around the shaft: a knuckle segment angled forward, a fingertip segment folded under.
+      const kx = -0.034 + i * 0.023;
+      const knuckle = add(MeshBuilder.CreateCapsule('fx-vm-finger', { height: 0.05, radius: 0.0095, tessellation: 6, subdivisions: 1 }, s), leather, root);
+      knuckle.position.set(kx, 0.035, 0.075);
+      knuckle.rotation.set(1.15, 0, 0);
+      const tip = add(MeshBuilder.CreateCapsule('fx-vm-fingertip', { height: 0.04, radius: 0.0085, tessellation: 6, subdivisions: 1 }, s), leather, root);
+      tip.position.set(kx, 0.012, 0.095);
+      tip.rotation.set(2.3, 0, 0);
+    }
+    const thumb = add(MeshBuilder.CreateCapsule('fx-vm-thumb', { height: 0.06, radius: 0.011, tessellation: 6, subdivisions: 1 }, s), leather, root);
+    thumb.position.set(-0.05, 0.03, 0.045);
+    thumb.rotation.set(0.5, -0.4, 1.2);
+
+    // ---- trident: dark iron shaft with a leather-wrapped grip, brass collars, a compact three-prong head
     const weapon = new TransformNode('fx-vm-weapon', s);
     weapon.parent = root;
-    weapon.position.set(0, 0, 0.06);
-    const shaft = add(MeshBuilder.CreateCylinder('fx-vm-shaft', { diameter: 0.03, height: 0.9, tessellation: 8 }, s), gold, weapon);
-    shaft.position.y = 0.18;
+    weapon.position.set(0, 0.03, 0.06);
+    weapon.rotation.copyFrom(VM_WEAPON_REST_ROT);
+    cyl('fx-vm-shaft', 0.02, 0.022, 0.62, 10, iron, weapon, 0, 0.14, 0);
+    cyl('fx-vm-grip', 0.028, 0.028, 0.14, 10, leather, weapon, 0, 0.0, 0);
+    for (const y of [-0.05, -0.02, 0.01, 0.04]) ring('fx-vm-wrap', 0.03, 0.004, leather, weapon, 0, y, 0);
+    ring('fx-vm-collar', 0.03, 0.007, brass, weapon, 0, 0.08, 0);
+    ring('fx-vm-collar', 0.03, 0.007, brass, weapon, 0, -0.08, 0);
+    cyl('fx-vm-ferrule', 0.0, 0.024, 0.05, 8, brass, weapon, 0, -0.14, 0);
+    const headBase = cyl('fx-vm-headbase', 0.026, 0.02, 0.04, 8, brass, weapon, 0, 0.46, 0);
+    headBase.rotation.set(0, 0, 0);
+    ring('fx-vm-headband', 0.028, 0.005, iron, weapon, 0, 0.44, 0);
+    const bar = add(MeshBuilder.CreateBox('fx-vm-guard', { width: 0.13, height: 0.016, depth: 0.014 }, s), brass, weapon);
+    bar.position.y = 0.485;
     const prong = (x: number, h: number, tilt: number) => {
-      const p = add(MeshBuilder.CreateCylinder('fx-vm-prong', { diameterTop: 0, diameterBottom: 0.028, height: h, tessellation: 6 }, s), gold, weapon);
-      p.position.set(x, 0.63 + h / 2, 0);
+      const p = cyl('fx-vm-prong', 0, 0.018, h, 6, iron, weapon, x, 0.49 + h / 2 - 0.004, 0);
       p.rotation.z = tilt;
+      const tipGlint = cyl('fx-vm-prongtip', 0, 0.009, 0.03, 6, brass, weapon, x - Math.sin(tilt) * (h - 0.012), 0.49 + h - 0.012, 0);
+      tipGlint.rotation.z = tilt;
     };
-    prong(0, 0.2, 0);
-    prong(-0.07, 0.14, 0.18);
-    prong(0.07, 0.14, -0.18);
-    const guard = add(MeshBuilder.CreateBox('fx-vm-guard', { width: 0.18, height: 0.025, depth: 0.03 }, s), gold, weapon);
-    guard.position.y = 0.63;
-    // Swing arc: a thin crescent fan in front of the hand, alpha-blended (never additive whitewash).
+    prong(0, 0.17, 0);
+    prong(-0.052, 0.12, 0.2);
+    prong(0.052, 0.12, -0.2);
+    stud(weapon, -0.045, 0.485, 0.009, 0.01);
+    stud(weapon, 0.045, 0.485, 0.009, 0.01);
+
+    // ---- lantern (lower left): iron cage with brass panels and rings, warm glass, a small steady flame
+    const lantern = new TransformNode('fx-vm-lantern', s);
+    lantern.parent = cam;
+    lantern.position.copyFrom(VM_LANTERN_POS);
+    lantern.rotation.copyFrom(VM_LANTERN_ROT);
+    lantern.scaling.setAll(VM_LANTERN_SCALE);
+    cyl('fx-vm-lbase', 0.1, 0.085, 0.018, 10, iron, lantern, 0, -0.085, 0);
+    cyl('fx-vm-lfoot', 0.06, 0.07, 0.012, 8, brass, lantern, 0, -0.098, 0);
+    cyl('fx-vm-lglass', 0.07, 0.07, 0.13, 10, glass, lantern, 0, -0.01, 0);
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2 + Math.PI / 4;
+      cyl('fx-vm-lbar', 0.007, 0.007, 0.15, 6, iron, lantern, Math.cos(a) * 0.04, -0.01, Math.sin(a) * 0.04);
+    }
+    ring('fx-vm-lring', 0.088, 0.006, brass, lantern, 0, -0.058, 0);
+    ring('fx-vm-lring', 0.088, 0.006, brass, lantern, 0, 0.045, 0);
+    const panel = add(MeshBuilder.CreateBox('fx-vm-lpanel', { width: 0.03, height: 0.05, depth: 0.004 }, s), brass, lantern);
+    panel.position.set(0, -0.012, -0.043); // engraved-looking brass plate facing the viewer
+    const panelB = add(MeshBuilder.CreateBox('fx-vm-lpanel', { width: 0.004, height: 0.05, depth: 0.03 }, s), brass, lantern);
+    panelB.position.set(0.043, -0.012, 0);
+    cyl('fx-vm-lcap', 0.035, 0.1, 0.035, 10, iron, lantern, 0, 0.075, 0);
+    cyl('fx-vm-lchimney', 0.02, 0.03, 0.03, 8, brass, lantern, 0, 0.105, 0);
+    const handle = ring('fx-vm-lhandle', 0.06, 0.006, iron, lantern, 0, 0.145, 0);
+    handle.rotation.x = Math.PI / 2;
+    stud(lantern, 0, 0.122, 0, 0.014);
+    const wick = cyl('fx-vm-lwick', 0.012, 0.016, 0.02, 6, brass, lantern, 0, -0.06, 0);
+    void wick;
+    const ember = add(MeshBuilder.CreateSphere('fx-vm-flame', { diameter: 0.024, segments: 6 }, s), flame, lantern);
+    ember.position.set(0, -0.035, 0);
+    ember.scaling.set(1, 1.5, 1);
+    // The hunter's hand holding the lantern: a small dark cuff set back, a palm and visible curled fingers on the handle.
+    const lcuff = cyl('fx-vm-lcuff', 0.07, 0.085, 0.09, 12, leather, lantern, -0.06, 0.21, -0.12);
+    lcuff.rotation.set(Math.PI / 2 - 0.6, 0, 0.35);
+    const lstrap = ring('fx-vm-lstrap', 0.082, 0.008, leather, lantern, -0.062, 0.215, -0.125);
+    lstrap.rotation.set(Math.PI / 2 - 0.6, 0, 0.35);
+    stud(lantern, -0.04, 0.215, -0.09, 0.009);
+    const lpalm = add(MeshBuilder.CreateBox('fx-vm-lpalm', { width: 0.06, height: 0.04, depth: 0.065 }, s), leather, lantern);
+    lpalm.position.set(-0.025, 0.17, -0.05);
+    lpalm.rotation.set(0.3, 0.2, 0.2);
+    for (let i = 0; i < 3; i++) {
+      const f = add(MeshBuilder.CreateCapsule('fx-vm-lfinger', { height: 0.04, radius: 0.008, tessellation: 6, subdivisions: 1 }, s), leather, lantern);
+      f.position.set(-0.03 + i * 0.02, 0.152, -0.015);
+      f.rotation.set(1.9, 0, 0);
+    }
+
+    // ---- swing arc: a thin crescent fan in front of the hand, alpha-blended (never additive whitewash)
     const arcMat = new StandardMaterial('fx-vm-arc', s);
     arcMat.emissiveColor = Color3.FromHexString('#ffd88a');
     arcMat.diffuseColor = Color3.Black();
@@ -271,11 +417,14 @@ export class EffectsLayer {
     arcMat.backFaceCulling = false;
     arcMat.fogEnabled = false;
     arcMat.alpha = 0;
-    const arc = add(MeshBuilder.CreateDisc('fx-vm-arcmesh', { radius: 0.62, arc: 0.32, tessellation: 40 }, s), arcMat as StandardMaterial, root);
+    const arc = add(MeshBuilder.CreateDisc('fx-vm-arcmesh', { radius: 0.5, arc: 0.3, tessellation: 40 }, s), arcMat, root);
     arc.position.set(-0.3, 0.1, 0.35);
     arc.rotation.set(Math.PI / 2 - 0.25, 0, 0);
     arc.isVisible = false;
-    this.vm = { root, weapon, arc, arcMat, mats: [cloth, skin, gold, arcMat], meshes };
+    this.vm = { root, weapon, lantern, arc, arcMat, mats: [leather, cloth, iron, brass, glass, flame, arcMat], meshes };
+    const inPlay = typeof document !== 'undefined' && document.pointerLockElement !== null;
+    root.setEnabled(inPlay);
+    lantern.setEnabled(inPlay);
     return this.vm;
   }
 
@@ -287,7 +436,7 @@ export class EffectsLayer {
     const reset = () => {
       vm.root.position.copyFrom(VM_REST_POS);
       vm.root.rotation.copyFrom(VM_REST_ROT);
-      vm.weapon.rotation.set(0, 0, 0);
+      vm.weapon.rotation.copyFrom(VM_WEAPON_REST_ROT);
       vm.arc.isVisible = false;
       vm.arcMat.alpha = 0;
     };
@@ -318,7 +467,7 @@ export class EffectsLayer {
       vm.root.rotation.y += 0.35 * wind - 0.55 * slash;
       vm.root.position.x += 0.06 * wind - 0.26 * slash;
       vm.root.position.y += 0.04 * wind - 0.03 * slash;
-      vm.weapon.rotation.x = 0.9 * slash;
+      vm.weapon.rotation.x += 0.9 * slash;
       // Local recoil just after impact (viewmodel only).
       const kick = smoothstep(0.45, 0.55, t) * (1 - smoothstep(0.55, 0.85, t));
       vm.root.position.z -= 0.07 * kick;
@@ -336,7 +485,8 @@ export class EffectsLayer {
       vm.root.position.x -= 0.24 * up;
       vm.root.position.y += 0.1 * up;
       vm.root.position.z += 0.05 * up;
-      vm.weapon.rotation.z = (Math.PI / 2 - 0.15) * up; // staff crosswise
+      vm.weapon.rotation.z += (Math.PI / 2 - 0.15) * up; // staff crosswise
+      vm.weapon.rotation.x -= 0.4 * up; // level the leaning shaft into a guard
       vm.root.rotation.z -= 0.25 * up;
       if (!calm) vm.root.position.z -= 0.035 * smoothstep(0.25, 0.32, t) * (1 - smoothstep(0.32, 0.6, t)); // braced impact
       vm.arc.isVisible = up > 0.05;
@@ -370,6 +520,7 @@ export class EffectsLayer {
     for (const m of vm.meshes) m.dispose();
     for (const m of vm.mats) m.dispose();
     vm.weapon.dispose();
+    vm.lantern.dispose();
     vm.root.dispose();
   }
 

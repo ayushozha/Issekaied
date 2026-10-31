@@ -11,7 +11,7 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import type { GlowLayer } from '@babylonjs/core/Layers/glowLayer';
 import type { EnemyState, GhostStrategy, PlayerState, RoomSnapshot } from '../../shared/protocol';
 import { CHANNELS } from './powers';
-import { flatMaterial } from './world';
+import { flatMaterial, softParticleTexture } from './world';
 
 /**
  * Haunts are 2D sprites on camera-facing vertical planes (billboard around world Y), cut from the
@@ -20,17 +20,34 @@ import { flatMaterial } from './world';
  */
 const HAUNTS_ATLAS = '/generated/ghosts/haunts-atlas.png';
 const MONSTERS_ATLAS = '/generated/ghosts/monsters-atlas.png'; // three equal transparent columns: goblin, orc, beast
+const BOSS_PORTRAIT = '/generated/ghosts/raksha-boss.png'; // 1024x1536 RGBA full-figure portrait, only for the canonical boss
+/** Internal sprite key for the canonical boss; `spriteKeyFor` keeps reporting the public family `raksha`. */
+const BOSS_KEY = 'raksha-boss';
 const ALPHA_CUTOFF = 16 / 255; // drops the generator's alpha-1 dust, keeps spectral wisps for blending
-interface SpriteDef { atlas: string; crop: [number, number, number, number]; height: number; maxWidth: number; base: number }
+/**
+ * `spectral` haunts drift (teal wisp trails in the atlas, no feet) and read slightly translucent; grounded
+ * monsters stand on their feet with no hover. `shadow` is the foot-contact disc width relative to the plane.
+ */
+interface SpriteDef { atlas: string; crop: [number, number, number, number]; height: number; maxWidth: number; base: number; spectral: boolean; shadow: number }
 /** Normalized image rects (left, top, right, bottom), top-left origin. Haunt crops from assets/generated/PROVENANCE.md. */
 const SPRITES: Record<string, SpriteDef> = {
-  morrow: { atlas: HAUNTS_ATLAS, crop: [0.121212, 0.070175, 0.416268, 0.475279], height: 1.95, maxWidth: 1.4, base: 0.25 },
-  nix: { atlas: HAUNTS_ATLAS, crop: [0.608453, 0.119617, 0.91866, 0.463317], height: 1.25, maxWidth: 1.4, base: 0.05 },
-  vesper: { atlas: HAUNTS_ATLAS, crop: [0.100478, 0.555024, 0.437799, 0.927432], height: 1.75, maxWidth: 1.6, base: 0.45 }, // wings may exceed 1.4
-  raksha: { atlas: HAUNTS_ATLAS, crop: [0.582935, 0.554226, 0.942584, 0.924242], height: 1.55, maxWidth: 1.4, base: 0.1 },
-  goblin: { atlas: MONSTERS_ATLAS, crop: [0, 0, 1 / 3, 1], height: 1.3, maxWidth: 1.3, base: 0.05 },
-  orc: { atlas: MONSTERS_ATLAS, crop: [1 / 3, 0, 2 / 3, 1], height: 1.8, maxWidth: 1.4, base: 0.05 },
-  beast: { atlas: MONSTERS_ATLAS, crop: [2 / 3, 0, 1, 1], height: 1.5, maxWidth: 1.4, base: 0.1 },
+  // Reaper in tattered charcoal cloth with a brass lantern: tall and thin.
+  morrow: { atlas: HAUNTS_ATLAS, crop: [0.121212, 0.070175, 0.416268, 0.475279], height: 1.95, maxWidth: 1.4, base: 0.25, spectral: true, shadow: 0.55 },
+  // Ghoul hiding in a treasure chest: squat, crouched, hugs the ground.
+  nix: { atlas: HAUNTS_ATLAS, crop: [0.608453, 0.119617, 0.91866, 0.463317], height: 1.1, maxWidth: 1.3, base: 0.03, spectral: true, shadow: 0.8 },
+  // Moth spirit: wide bone-ribbed wings, long trailing veils; hovers highest.
+  vesper: { atlas: HAUNTS_ATLAS, crop: [0.100478, 0.555024, 0.437799, 0.927432], height: 1.9, maxWidth: 1.9, base: 0.5, spectral: true, shadow: 0.45 },
+  // Raksha is the boss: armoured in bone plate and bells, broad-shouldered, towers over the others.
+  raksha: { atlas: HAUNTS_ATLAS, crop: [0.582935, 0.554226, 0.942584, 0.924242], height: 2.2, maxWidth: 2.0, base: 0.12, spectral: true, shadow: 0.7 },
+  // Goblin: small, hunched under its pack, lantern-staff taller than itself.
+  goblin: { atlas: MONSTERS_ATLAS, crop: [0, 0, 1 / 3, 1], height: 1.2, maxWidth: 1.25, base: 0, spectral: false, shadow: 0.6 },
+  // Orc: solid, planted stance with tower shield; the biggest grounded body.
+  orc: { atlas: MONSTERS_ATLAS, crop: [1 / 3, 0, 2 / 3, 1], height: 2.0, maxWidth: 1.7, base: 0, spectral: false, shadow: 0.75 },
+  // Beast: antlered quadruped, wide and low.
+  beast: { atlas: MONSTERS_ATLAS, crop: [2 / 3, 0, 1, 1], height: 1.6, maxWidth: 1.7, base: 0.02, spectral: false, shadow: 0.85 },
+  // The one true Raksha: horned, bone-armoured demon standing on clawed feet, ~2.7 m. Generic rakshasa
+  // clones keep the atlas family above; if this portrait fails to load the boss falls back to it too.
+  [BOSS_KEY]: { atlas: BOSS_PORTRAIT, crop: [0, 0, 1, 1], height: 2.7, maxWidth: 2.2, base: 0, spectral: false, shadow: 0.55 },
 };
 /** Every enemy draws from an approved atlas: valid baseId first, canonical id, then id-prefix/species alias. */
 const SPRITE_ALIAS: Record<string, string> = { morrow: 'morrow', nix: 'nix', vesper: 'vesper', raksha: 'raksha', ghost: 'morrow', ghoul: 'nix', goblin: 'goblin', orc: 'orc', rakshasa: 'raksha', beast: 'beast' };
@@ -42,8 +59,14 @@ export function spriteKeyFor(e: EnemyState): string {
 }
 const LABEL_MIN_DISTANCE = 3;
 const LABEL_MAX_DISTANCE = 28;
-const SPRITE_EMISSIVE = new Color3(0.88, 0.88, 0.9);
-const HIT_EMISSIVE = new Color3(1.15, 1.05, 0.95);
+const SHADOW_MAX_DISTANCE = 32;
+// Artwork is shown slightly under full white with a candle-warm bias so it sits in the crimson/gold scene
+// instead of popping like a lit cut-out; the atlas teal still reads because the shift is small.
+const SPRITE_EMISSIVE = new Color3(0.82, 0.78, 0.74);
+// Hit feedback: a quiet ember tint on the struck sprite only, never a white flare.
+const HIT_EMISSIVE = new Color3(1.0, 0.68, 0.46);
+const SPECTRAL_ALPHA = 0.94;
+const RETURNING_ALPHA = 0.42;
 
 /** Minimum cosine between aim and the direction to a haunt for it to count as targeted. */
 export const aimThreshold = (dist: number): number => (dist < 6 ? 0.93 : 0.985);
@@ -85,9 +108,10 @@ class Label {
     this.last = key;
     const ctx = this.tex.getContext() as unknown as CanvasRenderingContext2D;
     ctx.clearRect(0, 0, 384, 96);
-    ctx.fillStyle = 'rgba(8, 7, 12, 0.72)';
+    ctx.fillStyle = 'rgba(10, 7, 9, 0.74)';
     ctx.fillRect(8, 8, 368, 80);
-    ctx.strokeStyle = 'rgba(214, 178, 96, 0.55)';
+    ctx.strokeStyle = 'rgba(168, 132, 72, 0.5)'; // worn brass edge
+
     ctx.lineWidth = 2;
     ctx.strokeRect(8, 8, 368, 80);
     ctx.textAlign = 'center';
@@ -119,6 +143,8 @@ interface EnemyView {
   marker: Mesh | null;
   sprite: Mesh | null;
   spriteMat: StandardMaterial | null;
+  /** Foot-contact disc on the ground under the root; shares one cached material, faded via visibility. */
+  shadow: Mesh | null;
   label: Label;
   target: Vector3;
   state: EnemyState;
@@ -127,6 +153,9 @@ interface EnemyView {
   base: number;
   phase: number;
   hitTimer: number;
+  /** Current and goal opacity for the soft banish/return fade (1 hunting, dim returning, 0 banished). */
+  alpha: number;
+  alphaGoal: number;
 }
 
 interface PlayerView {
@@ -147,11 +176,18 @@ export class EntityLayer {
   private readonly playerMat = new Map<string, StandardMaterial>();
   private readonly bodyGlow: StandardMaterial;
   private readonly ring: Mesh;
+  private readonly shadowMat: StandardMaterial;
   private targetId: string | null = null;
   private readonly atlases = new Map<string, { tex: Texture; state: 'loading' | 'ready' | 'failed' }>();
 
   constructor(private readonly scene: Scene, private readonly glow: GlowLayer | null = null) {
     this.bodyGlow = flatMaterial(scene, 'hunter-lantern-mat', Color3.Black(), new Color3(1, 0.75, 0.4));
+    // One soft black disc material for every enemy's foot shadow (texture built once, never per enemy).
+    this.shadowMat = flatMaterial(scene, 'enemy-shadow-mat', Color3.Black(), Color3.Black(), 0.5);
+    this.shadowMat.diffuseTexture = softParticleTexture(scene);
+    this.shadowMat.useAlphaFromDiffuseTexture = true;
+    this.shadowMat.disableLighting = true;
+    this.shadowMat.disableDepthWrite = true;
     this.ring = MeshBuilder.CreateTorus('target-ring', { diameter: 1.5, thickness: 0.05, tessellation: 40 }, scene);
     const rm = flatMaterial(scene, 'target-ring-mat', Color3.Black(), new Color3(0.85, 0.68, 0.32), 0.75);
     rm.disableLighting = true;
@@ -249,16 +285,27 @@ export class EntityLayer {
     const k = 1 - Math.exp(-dt * 10);
     const eye = this.scene.activeCamera?.globalPosition ?? null;
     let ringPlaced = false;
+    const kFade = 1 - Math.exp(-dt * 6);
     for (const v of this.enemies.values()) {
       Vector3.LerpToRef(v.root.position, v.target, k, v.root.position);
+      // Soft fade between hunting / returning / banished; the root is only switched off once invisible.
+      if (Math.abs(v.alphaGoal - v.alpha) > 0.004) {
+        v.alpha += (v.alphaGoal - v.alpha) * kFade;
+        if (v.spriteMat) v.spriteMat.alpha = v.alpha;
+        if (v.shadow) v.shadow.visibility = v.alpha;
+      } else if (v.alphaGoal === 0 && v.root.isEnabled()) {
+        v.root.setEnabled(false);
+      }
       if (eye) {
         const d = Vector3.Distance(eye, v.root.position);
-        v.label.plane.setEnabled(d > LABEL_MIN_DISTANCE && d < LABEL_MAX_DISTANCE);
+        v.label.plane.setEnabled(v.alphaGoal > 0 && d > LABEL_MIN_DISTANCE && d < LABEL_MAX_DISTANCE);
+        v.shadow?.setEnabled(d < SHADOW_MAX_DISTANCE);
       }
       v.phase += dt;
-      // Sprites sit on the ground plane (plus a per-haunt float), independent of the server's centre y.
-      const hover = Math.sin(v.phase * 0.9) * 0.05;
+      // Sprites sit on the ground plane, independent of the server's centre y. Only spectral haunts drift.
+      const hover = SPRITES[v.key]?.spectral === false ? 0 : Math.sin(v.phase * 0.9) * 0.05;
       v.visual.position.y = -v.root.position.y + v.base + hover;
+      if (v.shadow) v.shadow.position.y = -v.root.position.y + 0.03;
       if (v.state.id === this.targetId && v.state.state !== 'banished') {
         this.ring.position.set(v.root.position.x, 0.06, v.root.position.z);
         this.ring.setEnabled(true);
@@ -289,9 +336,22 @@ export class EntityLayer {
       (message) => {
         entry.state = 'failed';
         console.warn('[entities] atlas failed', url, message);
+        if (url === BOSS_PORTRAIT) {
+          // Boss portrait missing: drop the canonical boss back onto its atlas family, never a bare marker.
+          for (const v of this.enemies.values()) if (v.key === BOSS_KEY) this.useLegacyBoss(v);
+          return;
+        }
         this.onAssetIssue?.('Some enemy artwork failed to load; those enemies are shown as plain markers.');
       },
     );
+  }
+
+  private useLegacyBoss(view: EnemyView): void {
+    const def = SPRITES.raksha;
+    view.key = 'raksha';
+    view.base = def.base;
+    this.ensureAtlas(def.atlas);
+    if (this.atlases.get(def.atlas)?.state === 'ready') this.buildSprite(view);
   }
 
   private createEnemy(e: EnemyState): EnemyView {
@@ -299,7 +359,9 @@ export class EntityLayer {
     root.position.set(e.position[0], e.position[1], e.position[2]);
     const visual = new TransformNode(`enemy-${e.id}-visual`, this.scene);
     visual.parent = root;
-    const key = spriteKeyFor(e);
+    // Only the canonical boss id gets the portrait; its atlas is shared by every boss build (one load).
+    const bossPortrait = e.id === 'raksha' && this.atlases.get(BOSS_PORTRAIT)?.state !== 'failed';
+    const key = bossPortrait ? BOSS_KEY : spriteKeyFor(e);
     const def = SPRITES[key];
     // Plain spectral marker until the atlas is ready (or if it never is). Not a stand-in character.
     const marker = MeshBuilder.CreateSphere(`enemy-${e.id}-marker`, { diameter: 0.5, segments: 10 }, this.scene);
@@ -309,7 +371,7 @@ export class EntityLayer {
     marker.isPickable = false;
     this.glow?.addExcludedMesh(marker);
     const label = new Label(this.scene, visual, 1.75, 1.3, this.glow);
-    const view: EnemyView = { root, visual, marker, sprite: null, spriteMat: null, label, target: root.position.clone(), state: e, key, height: 1.5, base: def?.base ?? 0.1, phase: Math.random() * 6, hitTimer: 0 };
+    const view: EnemyView = { root, visual, marker, sprite: null, spriteMat: null, shadow: null, label, target: root.position.clone(), state: e, key, height: 1.5, base: def?.base ?? 0.1, phase: Math.random() * 6, hitTimer: 0, alpha: 1, alphaGoal: 1 };
     this.enemies.set(e.id, view);
     if (def) {
       this.ensureAtlas(def.atlas);
@@ -355,19 +417,37 @@ export class EntityLayer {
     plane.isPickable = false;
     plane.material = mat;
     this.glow?.addExcludedMesh(plane);
+    // Flat foot-contact disc so the billboard reads as standing on (or drifting just above) the ground.
+    const shadow = MeshBuilder.CreateDisc(`enemy-${view.state.id}-shadow`, { radius: 0.5, tessellation: 20 }, this.scene);
+    shadow.rotation.x = Math.PI / 2;
+    shadow.scaling.set(width * def.shadow, width * def.shadow * 0.6, 1);
+    shadow.parent = view.root;
+    shadow.isPickable = false;
+    shadow.material = this.shadowMat;
+    shadow.visibility = def.spectral ? 0.7 : 1;
+    this.glow?.addExcludedMesh(shadow);
     view.sprite = plane;
     view.spriteMat = mat;
+    view.shadow = shadow;
     view.height = height;
     view.label.plane.position.y = height + 0.35;
     view.marker?.dispose();
     view.marker = null;
+    // Start at the goal opacity so a freshly built sprite does not fade in from nowhere mid-fight.
+    view.alpha = view.alphaGoal;
+    mat.alpha = view.alpha;
+    shadow.visibility = view.alpha;
     this.styleEnemy(view);
   }
 
   private styleEnemy(view: EnemyView): void {
     const e = view.state;
-    view.root.setEnabled(e.state !== 'banished');
-    if (view.spriteMat) view.spriteMat.alpha = e.state === 'returning' ? 0.4 : 1;
+    const full = SPRITES[view.key]?.spectral ? SPECTRAL_ALPHA : 1;
+    view.alphaGoal = e.state === 'banished' ? 0 : e.state === 'returning' ? RETURNING_ALPHA : full;
+    // Visible states re-enable immediately; the banished fade-out switches the root off from update().
+    // Without a sprite there is nothing to fade, so the marker toggles instantly as before.
+    if (view.alphaGoal > 0) view.root.setEnabled(true);
+    else if (!view.sprite) view.root.setEnabled(false);
     const grudge = e.memory.banishments ? ` · grudge ${e.memory.banishments}` : '';
     const mood = e.aggro ? 'hunting you' : e.strategy.replace('_', ' ');
     view.label.draw(`${e.name} · Lv ${e.level}`, `${mood}${grudge}`, e.aggro ? '#f0a58a' : STRATEGY_COLOR[e.strategy] ?? '#ccc', e.maxHp ? e.hp / e.maxHp : null);
@@ -390,7 +470,7 @@ export class EntityLayer {
     v.label.dispose();
     v.spriteMat?.diffuseTexture?.dispose();
     v.spriteMat?.dispose();
-    v.root.dispose();
+    v.root.dispose(); // disposes the shadow disc with it; its material is shared and kept
     this.enemies.delete(id);
   }
 
