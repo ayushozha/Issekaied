@@ -68,7 +68,9 @@ export function safeServerAudioUrl(raw: unknown): string | null {
 }
 
 interface Fade { target: number; perSecond: number; stopAtZero: boolean }
-interface VoiceItem { url: string; caption?: string; speaker?: string; priority?: boolean }
+interface VoiceItem { url: string; caption?: string; speaker?: string; priority?: boolean; kind?: 'npc' | 'cue' | 'listen'; npcId?: string }
+const NPC_GLOBAL_COOLDOWN_MS = 11000;
+const NPC_PER_ID_COOLDOWN_MS = 20000;
 
 export class AudioEngine {
   readonly sfx = new Sfx();
@@ -89,6 +91,8 @@ export class AudioEngine {
   private readonly queue: VoiceItem[] = [];
   private remote: HTMLAudioElement | null = null;
   private externalSpeech = false;
+  private lastNpcAt = -Infinity;
+  private readonly lastNpcById = new Map<string, number>();
   private loop: HTMLAudioElement | null = null;
   private loopWanted = false;
   private readonly lastCue = new Map<string, number>();
@@ -207,7 +211,7 @@ export class AudioEngine {
     this.lastCue.set(url, now);
     void this.available(url).then((ok) => {
       if (!ok) return;
-      const item: VoiceItem = { url, caption, speaker, priority: true };
+      const item: VoiceItem = { url, caption, speaker, priority: true, kind: 'cue' };
       if (!this.voice) this.startVoice(item);
       else if (this.voiceItem?.priority) this.nextCue = item;
       else {
@@ -215,6 +219,29 @@ export class AudioEngine {
         this.startVoice(item);
       }
     });
+  }
+
+  /**
+   * Single NPC channel (intros, server taunts, laughs): no queue, no backlog, never deferred. Skipped while
+   * anything else speaks (ritual cue, listening, The Source). Global 11 s and per-NPC 20 s cooldowns.
+   */
+  npc(npcId: string, url: string, caption: string | undefined, speaker: string): boolean {
+    if (!this.unlocked || this.voice || this.externalSpeech) return false;
+    const now = performance.now();
+    if (now - this.lastNpcAt < NPC_GLOBAL_COOLDOWN_MS || now - (this.lastNpcById.get(npcId) ?? -Infinity) < NPC_PER_ID_COOLDOWN_MS) return false;
+    this.lastNpcAt = now;
+    this.lastNpcById.set(npcId, now);
+    this.startVoice({ url, caption, speaker, kind: 'npc', npcId });
+    return true;
+  }
+
+  get speakingNpcId(): string | null {
+    return this.voiceItem?.kind === 'npc' ? (this.voiceItem.npcId ?? null) : null;
+  }
+
+  /** Cuts NPC speech (range left, pause, disconnect); rituals and listening are untouched. */
+  stopNpc(): void {
+    if (this.voiceItem?.kind === 'npc') this.stopVoice();
   }
 
   /** The Source's remote WebRTC audio follows the voice volume and mute like every other voice. */

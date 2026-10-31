@@ -59,6 +59,8 @@ export class Hud {
   private wardUntil = 0;
   private cueTimer = 0;
   private sigilKey = '';
+  private leaderboardTimer = 0;
+  private leaderboardRequest: AbortController | null = null;
 
   constructor(h: HudHandlers) {
     for (const action of COMBAT_ACTIONS) {
@@ -88,11 +90,55 @@ export class Hud {
 
   show(): void {
     this.root.hidden = false;
+    if (!this.leaderboardTimer) {
+      void this.refreshLeaderboard();
+      this.leaderboardTimer = window.setInterval(() => void this.refreshLeaderboard(), 8000);
+    }
+  }
+
+  private async refreshLeaderboard(): Promise<void> {
+    if (this.root.hidden || this.leaderboardRequest) return;
+    const request = new AbortController();
+    this.leaderboardRequest = request;
+    const timeout = window.setTimeout(() => request.abort(), 5000);
+    try {
+      const response = await fetch('/api/leaderboard', { signal: request.signal });
+      if (!response.ok) throw new Error('ledger unavailable');
+      const body = await response.json() as { mode?: string; players?: unknown[]; entries?: unknown[] };
+      if (this.root.hidden) return;
+      const rows = body.players ?? body.entries;
+      if (!Array.isArray(rows)) throw new Error('ledger unavailable');
+      const list = $('leaderboard-list');
+      list.replaceChildren();
+      for (const raw of rows.slice(0, 5)) {
+        const row = raw as Record<string, unknown>;
+        const number = (key: string) => typeof row[key] === 'number' && Number.isFinite(row[key]) ? Math.max(0, Math.floor(row[key] as number)) : 0;
+        const li = document.createElement('li');
+        const name = document.createElement('span');
+        name.textContent = typeof row.name === 'string' ? row.name.slice(0, 24) : 'Hunter';
+        const stats = document.createElement('strong');
+        stats.textContent = `${number('kills')} / ${number('deaths')}`;
+        li.append(name, stats);
+        li.title = `${number('joins')} arrivals · ${Math.floor(number('timeSeconds') / 60)} minutes played`;
+        list.appendChild(li);
+      }
+      $('leaderboard-status').textContent = `${body.mode === 'supabase' ? 'Saved in Supabase' : 'Local saved ledger'} · ${rows.length ? 'updated live' : 'awaiting hunters'}`;
+    } catch {
+      if (!this.root.hidden) $('leaderboard-status').textContent = 'Ledger unavailable · retrying';
+    } finally {
+      window.clearTimeout(timeout);
+      if (this.leaderboardRequest === request) this.leaderboardRequest = null;
+    }
   }
 
   /** Clears every per-session readout so a new hunt (or the title screen) starts from a blank HUD. */
   reset(): void {
     this.root.hidden = true;
+    window.clearInterval(this.leaderboardTimer);
+    this.leaderboardTimer = 0;
+    this.leaderboardRequest?.abort();
+    this.leaderboardRequest = null;
+    $('leaderboard-list').replaceChildren();
     this.whispers.replaceChildren();
     this.cooldowns = { primary: 0, secondary: 0, incantation: 0, heal: 0 };
     this.wardUntil = 0;

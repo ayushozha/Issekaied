@@ -88,12 +88,17 @@ export class LocalPlayer {
           this.onInteract?.();
           return;
       }
-      if (MOVE_KEYS.has(e.code)) this.keys.add(e.code);
+      // Only a trusted gameplay press may arm movement: locked, enabled, focused, visible, not in a field.
+      if (MOVE_KEYS.has(e.code) && this.inputEnabled && document.hasFocus() && !document.hidden && !isTypingTarget(e.target)) this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
       if (e.code === 'KeyV') this.onHoldTalk?.(false);
     });
+    // Capture phase: a release must clear movement even when a field or menu stops bubbling.
+    window.addEventListener('keyup', (e) => {
+      if (MOVE_KEYS.has(e.code)) this.keys.delete(e.code);
+    }, true);
     window.addEventListener('blur', () => {
       this.clearHeld();
       this.onHoldTalk?.(false);

@@ -10,7 +10,7 @@ A first-person Halloween adventure where the ghosts you banish remember your nam
 
 ## The hunt
 
-You died in your old world and awoke in Bellgrave. The Source remembers your arrival. Follow the lantern-lit path from the safe gate, recover three sigils from Morrow, Nix and Vesper, and confront Raksha at the eastern altar. The echo portal changes the encounter inside this same courtyard.
+Your old world ended. A ten-second narrated prologue brings you into Bellgrave: a hand-built Halloween realm of pumpkin graves, ruined chapel arches, lantern paths and a guarded eastern altar. Fifty enemies inhabit the expanded map. Recover three sigils from Morrow, Nix and Vesper, then confront Raksha. The echo portal changes the encounter inside this same world.
 
 The hunter draws strength from Ganesha, Hanuman, Shiva and Vishnu according to the encounter. There is no deity-selection screen. Ghosts patrol their own areas, warn one another and adapt when a remembered hunter returns.
 
@@ -24,7 +24,9 @@ The hunter draws strength from Ganesha, Hanuman, Shiva and Vishnu according to t
 | V / The Source panel | Push-to-talk, or type a question |
 | Escape | Pause and release the mouse |
 
-Settings control music, voice, effects, look sensitivity and reduced motion. Incantations use distinct portraits, mandalas, wind, frost and chakra effects with camera-safe feedback.
+Settings control music, voice, effects, look sensitivity and reduced motion. Visible weapon swings and ward animations accompany mouse attacks. Incantations last under two seconds, use distinct portraits, mandalas, wind, frost and chakra effects, and cost 25 vitality. Nearby enemies speak sparingly; the Source answers when you ask. Movement requires held keys and stops when input is released or lost.
+
+The on-screen hunter leaderboard records banishments, deaths, arrivals and play time from server-authored events in Supabase. Ghost memory and player history continue across hunts.
 
 ## A world that remembers
 
@@ -43,6 +45,14 @@ The Source uses OpenAI Realtime for two-way voice and text. Microphone access st
 | **Supabase** | Canonical gameplay events, guest-player records and searchable lore. Unique event IDs prevent duplicate history; RLS protects the backend-only tables. |
 | **Freestyle** | Hosts the actual Terse actor runtime on an isolated persistent VM, separate from the VPS game server. |
 | **Superserve** | Executes trusted, bounded tactic/encounter-scoring jobs in disposable sandboxes. Results are validated before affecting a returning ghost or echo encounter. |
+
+### Track technology in the running game
+
+**Terse is a real remote runtime here.** [`actor/src/`](actor/src/) defines the durable ghost, deity and Source actors. [`server/src/integrations/memory.ts`](server/src/integrations/memory.ts) calls them through `terse-sdk` actor stubs. The actor service runs on a Freestyle VM; the main game API runs on the VPS. Ghost banishments and grudges, shared Shiva/Vishnu context and the Source ledger survive independently of a room's lifetime. This demo self-hosts Terse's local/dev runtime, rather than claiming managed Terse Cloud or replicated production infrastructure.
+
+**Agent Relay is in the gameplay path.** [`server/src/integrations/relay.ts`](server/src/integrations/relay.ts) uses `@agent-relay/sdk` with the private self-hosted Relaycast engine: `hivemind` delivers enemy warnings that recipients use to change tactics; `pantheon` shares invocation outcomes between divine agents. The Source also relays canonical world facts. This is the SDK integration, separate from installing the coding-session CLI. The official [Agent Relay framework guide](https://agentrelay.net/docs/communicate) and [Relaycast self-hosting guide](https://github.com/AgentWorkforce/relaycast#self-hosting) describe these supported integration paths.
+
+The public [`/health`](https://issekaied.ayushojha.com/health) endpoint exposes provider modes, reachability and sent/received counters. `terse` and `relay` identify actual provider paths; fallback modes are explicitly named. Counters are per process and reset on deployment. They are operational evidence, not sponsor billing receipts.
 
 Movement and combat never wait for model, database, actor-network or sandbox calls. Provider failures have explicit modes; a local fallback is never presented as a successful hosted integration.
 
@@ -85,7 +95,7 @@ Keep management credentials and provider keys out of browser code and `VITE_` va
 
 ## Verification and limits
 
-The backend has passed 28 focused tests and a 36-check, two-client full-quest network run. Browser checks cover safe idle spawning, movement, discrete attacks, wards, shrine interaction, explicit respawn and teardown. OpenAI Realtime connected in the browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for the distinction between isolated and live checks.
+The backend passes 31 focused tests. Network checks cover 50 unique enemies, authoritative health-cost powers, stale-input expiry and leaderboard persistence across a restart; the integrated client build passes. OpenAI Realtime connected in the public browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for exact evidence and limits.
 
 Both frontend and backend are live at the demo URL. The VPS deployment script builds immutable releases from `main`, checks the Source routes before activation and preserves the previous release for rollback. See [deployment instructions](deploy/vps/README.md).
 

@@ -31,6 +31,12 @@ const MIN_PORTRAIT_DISTANCE = 3;
 const CAMERA_SUPPRESS = 1.2;
 const CAMERA_NEAR = 3;
 
+/** Camera-local rest pose of the first-person viewmodel (x right, y up, z forward). */
+const VM_REST_POS = new Vector3(0.3, -0.3, 0.58);
+const VM_REST_ROT = new Vector3(0.12, -0.12, 0.1);
+
+interface Viewmodel { root: TransformNode; weapon: TransformNode; arc: Mesh; arcMat: StandardMaterial; mats: StandardMaterial[]; meshes: Mesh[] }
+
 interface BurstOptions { size?: number; speed?: number; life?: number; gravity?: number; spread?: number }
 
 /**
@@ -58,6 +64,8 @@ export class EffectsLayer {
   private reducedOverride: boolean | null = null;
   private readonly motionQuery: MediaQueryList | null;
   private disposed = false;
+  private vm: Viewmodel | null = null;
+  private vmFinish: (() => void) | null = null;
 
   constructor(private readonly scene: Scene) {
     this.soft = softParticleTexture(scene);
@@ -91,6 +99,7 @@ export class EffectsLayer {
       this.burst(anchor.add(new Vector3(0, 1, 0)), CHANNELS[power].color, 18, { size: 0.2, speed: 1.6, life: 0.8, spread: 1.2 });
       return;
     }
+    if (!caster) this.viewmodelIncant(CHANNELS[power].color); // our own Q: hand raises in the channel colour
     this.cinematics++;
     let released = false;
     const release = () => {
@@ -118,6 +127,7 @@ export class EffectsLayer {
    */
   primary(origin: Vector3, aim: Vector3, target?: Vector3 | null): void {
     if (this.disposed) return;
+    this.viewmodelSwing(); // local first-person weapon arc + recoil (viewmodel only; camera never moves)
     const a = safeAim(aim);
     const start = origin.add(a.scale(0.7)).add(new Vector3(0, -0.15, 0));
     const end = target ? target.clone() : origin.add(a.scale(10));
@@ -168,6 +178,8 @@ export class EffectsLayer {
 
   /** Ward (RMB, authoritative): a small ring at the caster's feet; the HUD chip carries the duration. */
   ward(feet: Vector3, color = '#9fd4ff'): void {
+    // Our own ward (feet ~1.6 m below the eye): raise the first-person weapon into a guard.
+    if (this.cameraDistance(feet) < CAMERA_NEAR) this.viewmodelBlock(color);
     this.ring(feet, color, 0.9, 1.6, 0.65);
   }
 
@@ -191,6 +203,174 @@ export class EffectsLayer {
     this.timers.clear();
     for (const finish of [...this.active]) finish();
     this.active.clear();
+    this.disposeViewmodel();
+  }
+
+  // ---- first-person viewmodel ------------------------------------------------------------------
+
+  /** One bounded camera-attached hand + gilded trident staff + a swing arc. Built lazily, rebuilt if the camera changes. */
+  private viewmodel(): Viewmodel | null {
+    const cam = this.scene.activeCamera;
+    if (!cam || this.disposed) return null;
+    if (this.vm && this.vm.root.parent === cam && !this.vm.root.isDisposed()) return this.vm;
+    this.disposeViewmodel();
+    const s = this.scene;
+    const root = new TransformNode('fx-viewmodel', s);
+    root.parent = cam;
+    root.position.copyFrom(VM_REST_POS);
+    root.rotation.copyFrom(VM_REST_ROT);
+    const mat = (name: string, diffuse: Color3, emissive: Color3) => {
+      const m = new StandardMaterial(name, s);
+      m.diffuseColor = diffuse;
+      m.emissiveColor = emissive; // low: lit by the moon, readable but never glowing
+      m.specularColor = new Color3(0.15, 0.12, 0.08);
+      m.fogEnabled = false;
+      return m;
+    };
+    const cloth = mat('fx-vm-cloth', new Color3(0.32, 0.22, 0.1), new Color3(0.07, 0.05, 0.03));
+    const skin = mat('fx-vm-glove', new Color3(0.2, 0.14, 0.1), new Color3(0.05, 0.035, 0.025));
+    const gold = mat('fx-vm-gold', new Color3(0.75, 0.55, 0.2), new Color3(0.18, 0.12, 0.03));
+    const meshes: Mesh[] = [];
+    const add = (m: Mesh, material: StandardMaterial, parent: TransformNode) => {
+      m.material = material;
+      m.parent = parent;
+      m.isPickable = false;
+      m.renderingGroupId = 1; // drawn after the world (depth cleared) so it never clips into walls
+      meshes.push(m);
+      return m;
+    };
+    // Sleeve + gloved fist, angled up from the lower right.
+    const sleeve = add(MeshBuilder.CreateCylinder('fx-vm-sleeve', { diameterTop: 0.11, diameterBottom: 0.15, height: 0.42, tessellation: 10 }, s), cloth, root);
+    sleeve.rotation.x = Math.PI / 2 - 0.35;
+    sleeve.position.set(0.02, -0.07, -0.16);
+    const fist = add(MeshBuilder.CreateSphere('fx-vm-fist', { diameter: 0.13, segments: 8 }, s), skin, root);
+    fist.scaling.set(1, 0.85, 1.15);
+    fist.position.set(0, 0, 0.06);
+    // Staff held upright through the fist, trident head above.
+    const weapon = new TransformNode('fx-vm-weapon', s);
+    weapon.parent = root;
+    weapon.position.set(0, 0, 0.06);
+    const shaft = add(MeshBuilder.CreateCylinder('fx-vm-shaft', { diameter: 0.03, height: 0.9, tessellation: 8 }, s), gold, weapon);
+    shaft.position.y = 0.18;
+    const prong = (x: number, h: number, tilt: number) => {
+      const p = add(MeshBuilder.CreateCylinder('fx-vm-prong', { diameterTop: 0, diameterBottom: 0.028, height: h, tessellation: 6 }, s), gold, weapon);
+      p.position.set(x, 0.63 + h / 2, 0);
+      p.rotation.z = tilt;
+    };
+    prong(0, 0.2, 0);
+    prong(-0.07, 0.14, 0.18);
+    prong(0.07, 0.14, -0.18);
+    const guard = add(MeshBuilder.CreateBox('fx-vm-guard', { width: 0.18, height: 0.025, depth: 0.03 }, s), gold, weapon);
+    guard.position.y = 0.63;
+    // Swing arc: a thin crescent fan in front of the hand, alpha-blended (never additive whitewash).
+    const arcMat = new StandardMaterial('fx-vm-arc', s);
+    arcMat.emissiveColor = Color3.FromHexString('#ffd88a');
+    arcMat.diffuseColor = Color3.Black();
+    arcMat.specularColor = Color3.Black();
+    arcMat.disableLighting = true;
+    arcMat.backFaceCulling = false;
+    arcMat.fogEnabled = false;
+    arcMat.alpha = 0;
+    const arc = add(MeshBuilder.CreateDisc('fx-vm-arcmesh', { radius: 0.62, arc: 0.32, tessellation: 40 }, s), arcMat as StandardMaterial, root);
+    arc.position.set(-0.3, 0.1, 0.35);
+    arc.rotation.set(Math.PI / 2 - 0.25, 0, 0);
+    arc.isVisible = false;
+    this.vm = { root, weapon, arc, arcMat, mats: [cloth, skin, gold, arcMat], meshes };
+    return this.vm;
+  }
+
+  /** Ends any running viewmodel animation (which resets transforms), then starts `tick` for `seconds`. */
+  private animateViewmodel(seconds: number, tick: (vm: Viewmodel, t: number) => void): void {
+    const vm = this.viewmodel();
+    if (!vm) return;
+    this.vmFinish?.();
+    const reset = () => {
+      vm.root.position.copyFrom(VM_REST_POS);
+      vm.root.rotation.copyFrom(VM_REST_ROT);
+      vm.weapon.rotation.set(0, 0, 0);
+      vm.arc.isVisible = false;
+      vm.arcMat.alpha = 0;
+    };
+    let finish: (() => void) | null = null;
+    finish = this.timed(seconds, (t) => {
+      if (vm.root.isDisposed()) return;
+      reset();
+      tick(vm, t);
+    }, () => {
+      if (!vm.root.isDisposed()) reset();
+      if (this.vmFinish === finish) this.vmFinish = null;
+    });
+    this.vmFinish = finish;
+  }
+
+  /** LMB: wind-up, right-to-left slash with a fading arc, small local recoil; 0.38 s, returns to rest. */
+  private viewmodelSwing(): void {
+    const calm = this.reducedMotion;
+    this.animateViewmodel(calm ? 0.3 : 0.38, (vm, t) => {
+      if (calm) {
+        vm.root.position.z += -0.04 * Math.sin(Math.PI * t); // gentle nudge, no sweep
+        return;
+      }
+      // 0..0.2 wind-up right, 0.2..0.55 slash across, 0.55..1 settle home.
+      const wind = smoothstep(0, 0.2, t) * (1 - smoothstep(0.2, 0.4, t));
+      const slash = smoothstep(0.18, 0.55, t) * (1 - smoothstep(0.6, 1, t));
+      vm.root.rotation.z += 0.5 * wind - 1.1 * slash;
+      vm.root.rotation.y += 0.35 * wind - 0.55 * slash;
+      vm.root.position.x += 0.06 * wind - 0.26 * slash;
+      vm.root.position.y += 0.04 * wind - 0.03 * slash;
+      vm.weapon.rotation.x = 0.9 * slash;
+      // Local recoil just after impact (viewmodel only).
+      const kick = smoothstep(0.45, 0.55, t) * (1 - smoothstep(0.55, 0.85, t));
+      vm.root.position.z -= 0.07 * kick;
+      vm.arc.isVisible = slash > 0.05;
+      vm.arc.rotation.y = -0.9 + 1.4 * smoothstep(0.18, 0.6, t);
+      vm.arcMat.alpha = 0.32 * envelope(Math.min(1, Math.max(0, (t - 0.18) / 0.5)), 0.2, 0.6);
+    });
+  }
+
+  /** RMB ward: staff swings horizontal across the view as a guard, a faint ward-coloured arc behind it. */
+  private viewmodelBlock(color: string): void {
+    const calm = this.reducedMotion;
+    this.animateViewmodel(0.45, (vm, t) => {
+      const up = calm ? envelope(t, 0.3, 0.4) : envelope(t, 0.25, 0.35);
+      vm.root.position.x -= 0.24 * up;
+      vm.root.position.y += 0.1 * up;
+      vm.root.position.z += 0.05 * up;
+      vm.weapon.rotation.z = (Math.PI / 2 - 0.15) * up; // staff crosswise
+      vm.root.rotation.z -= 0.25 * up;
+      if (!calm) vm.root.position.z -= 0.035 * smoothstep(0.25, 0.32, t) * (1 - smoothstep(0.32, 0.6, t)); // braced impact
+      vm.arc.isVisible = up > 0.05;
+      vm.arc.rotation.y = -0.5;
+      vm.arcMat.emissiveColor = Color3.FromHexString(color);
+      vm.arcMat.alpha = 0.22 * up;
+    });
+  }
+
+  /** Q: the hand lifts the staff overhead in the channel colour (incantation only, ≤0.9 s). */
+  private viewmodelIncant(color: string): void {
+    const calm = this.reducedMotion;
+    this.animateViewmodel(0.9, (vm, t) => {
+      const up = envelope(t, 0.25, 0.4);
+      vm.root.position.y += (calm ? 0.04 : 0.12) * up;
+      vm.root.position.x -= 0.12 * up;
+      vm.root.rotation.x -= 0.35 * up;
+      vm.arc.isVisible = up > 0.05;
+      vm.arc.rotation.y = 0.2 + (calm ? 0 : t * 1.2);
+      vm.arcMat.emissiveColor = Color3.FromHexString(color);
+      vm.arcMat.alpha = 0.18 * up;
+    });
+  }
+
+  private disposeViewmodel(): void {
+    this.vmFinish?.();
+    this.vmFinish = null;
+    const vm = this.vm;
+    if (!vm) return;
+    this.vm = null;
+    for (const m of vm.meshes) m.dispose();
+    for (const m of vm.mats) m.dispose();
+    vm.weapon.dispose();
+    vm.root.dispose();
   }
 
   // ---- channels -------------------------------------------------------------------------------
@@ -199,7 +379,7 @@ export class EffectsLayer {
   private ganesha(origin: Vector3, anchor: Vector3, caster: TransformNode | null, release: () => void): void {
     const c = CHANNELS.ganesha;
     const calm = this.reducedMotion;
-    this.decal('ganesha', anchor, 2.4, calm ? 2.2 : 2.4, 0.55, calm ? 0 : 0.5, calm ? 1 : 0.6, release);
+    this.decal('ganesha', anchor, 2.4, calm ? 1.8 : 1.9, 0.55, calm ? 0 : 0.5, calm ? 1 : 0.6, release);
     const feet = origin.add(new Vector3(0, -EYE_TO_FEET + 0.1, 0));
     this.ring(feet, c.color, 0.8, 2.2, 0.45);
     this.burst(anchor.add(new Vector3(0, 0.5, 0)), c.accent, calm ? 14 : 28, { size: 0.2, speed: calm ? 0.6 : 1.2, life: 1.4, gravity: 1.4, spread: 1.8 });
@@ -220,7 +400,7 @@ export class EffectsLayer {
     shell.isPickable = false;
     shell.material = mat;
     const peak = caster ? 0.14 : 0.2;
-    this.timed(2.2, (t) => {
+    this.timed(1.9, (t) => {
       mat.alpha = caster?.isDisposed() ? 0 : peak * envelope(t, 0.15, 0.5);
     }, () => {
       mat.dispose();
@@ -281,7 +461,7 @@ export class EffectsLayer {
   private shiva(anchor: Vector3, release: () => void): void {
     const c = CHANNELS.shiva;
     const calm = this.reducedMotion;
-    this.decal('shiva', anchor, 2.2, 2.4, 0.6, calm ? 0 : 0.25, calm ? 1 : 0.7, release);
+    this.decal('shiva', anchor, 2.2, 1.9, 0.6, calm ? 0 : 0.25, calm ? 1 : 0.7, release);
     this.ring(new Vector3(anchor.x, DECAL_Y + 0.02, anchor.z), c.color, 1.1, 2.6, 0.5);
     this.burst(anchor.add(new Vector3(0, 1.2, 0)), c.accent, calm ? 18 : 36, { size: 0.14, speed: calm ? 0.5 : 1.2, life: 1.4, gravity: -1.2, spread: 1.6 });
   }
