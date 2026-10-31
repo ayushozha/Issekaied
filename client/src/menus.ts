@@ -45,7 +45,11 @@ function persist(key: string, value: string): void {
   }
 }
 
-export type Screen = 'splash' | 'main' | 'pause' | 'settings' | 'credits' | 'confirm';
+export type Screen = 'splash' | 'main' | 'pause' | 'settings' | 'credits' | 'confirm' | 'leaderboard';
+
+interface BoardRow { name: string; kills: number; deaths: number; joins: number; timeSeconds: number }
+const MAX_STAT = 1_000_000_000;
+const stat = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.min(MAX_STAT, Math.max(0, Math.floor(v))) : 0);
 
 export interface MenuHandlers {
   onEnter(name: string): void;
@@ -98,6 +102,13 @@ export class Menus {
   private readonly confirmBody = $('confirm-body');
   private readonly confirmYes = $<HTMLButtonElement>('btn-confirm-yes');
   private readonly confirmNo = $<HTMLButtonElement>('btn-confirm-no');
+  private readonly boardBody = $<HTMLTableSectionElement>('leaderboard-table-body');
+  private readonly boardStatus = $('leaderboard-screen-status');
+  private readonly boardEmpty = $('leaderboard-empty');
+  private readonly boardRefresh = $<HTMLButtonElement>('btn-leaderboard-refresh');
+  private readonly shareStatus = $('share-status');
+  private readonly joinLink = $<HTMLInputElement>('join-link');
+  private boardRequest: AbortController | null = null;
 
   constructor(private readonly h: MenuHandlers) {
     this.name.value = localStorage.getItem(NAME_KEY) ?? '';
@@ -109,8 +120,14 @@ export class Menus {
     $('screen-splash').addEventListener('click', leaveSplash);
     window.addEventListener('keydown', (e) => {
       if (this.screen === 'splash') leaveSplash();
+      else if (e.key === 'Escape' && this.screen === 'leaderboard') this.closeLeaderboard();
       else if (e.key === 'Escape' && (this.screen === 'settings' || this.screen === 'credits' || this.screen === 'confirm')) this.show(this.returnTo);
     });
+
+    $('btn-leaderboard').addEventListener('click', () => this.openLeaderboard('main'));
+    this.boardRefresh.addEventListener('click', () => void this.loadLeaderboard());
+    $('btn-leaderboard-back').addEventListener('click', () => this.closeLeaderboard());
+    $('btn-copy-link').addEventListener('click', () => void this.copyJoinLink());
 
     const enter = () => {
       persist(NAME_KEY, this.name.value);
@@ -167,6 +184,10 @@ export class Menus {
     this.root.dataset.screen = screen;
     this.root.classList.toggle('titled', !this.inSession);
     for (const s of this.sections) s.hidden = s.dataset.screen !== screen;
+    if (screen !== 'leaderboard' && this.boardRequest) {
+      this.boardRequest.abort(); // never let a stale ledger request land on another screen
+      this.boardRequest = null;
+    }
     if (screen === 'main') $('btn-enter').focus();
     if (screen === 'pause') $('btn-resume').focus();
   }
@@ -214,6 +235,80 @@ export class Menus {
   private openCredits(from: Screen): void {
     this.returnTo = from;
     this.show('credits');
+  }
+
+  private openLeaderboard(from: Screen): void {
+    this.returnTo = from;
+    this.show('leaderboard');
+    this.boardRefresh.focus();
+    void this.loadLeaderboard();
+  }
+
+  private closeLeaderboard(): void {
+    this.boardRequest?.abort();
+    this.boardRequest = null;
+    this.show(this.returnTo === 'leaderboard' ? 'main' : this.returnTo);
+    $('btn-leaderboard').focus();
+  }
+
+  /** Reads the existing public GET /api/leaderboard once per open/refresh; never creates a player or session. */
+  private async loadLeaderboard(): Promise<void> {
+    this.boardRequest?.abort();
+    const request = new AbortController();
+    this.boardRequest = request;
+    const timeout = window.setTimeout(() => request.abort(), 5000);
+    this.boardRefresh.disabled = true;
+    this.boardStatus.textContent = 'Reading the ledger…';
+    try {
+      const response = await fetch('/api/leaderboard', { signal: request.signal, cache: 'no-store' });
+      if (!response.ok) throw new Error(`http ${response.status}`);
+      const body = (await response.json()) as { mode?: unknown; players?: unknown; entries?: unknown; updatedAt?: unknown };
+      if (request.signal.aborted) return;
+      const raw = Array.isArray(body.players) ? body.players : Array.isArray(body.entries) ? body.entries : null;
+      if (!raw) throw new Error('malformed');
+      const rows: BoardRow[] = raw.slice(0, 10).map((r) => {
+        const o = (r && typeof r === 'object' ? r : {}) as Record<string, unknown>;
+        return { name: typeof o.name === 'string' ? o.name.slice(0, 36) : 'Hunter', kills: stat(o.kills), deaths: stat(o.deaths), joins: stat(o.joins), timeSeconds: stat(o.timeSeconds) };
+      });
+      this.boardBody.replaceChildren();
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        for (const value of [row.name, row.kills, row.deaths, row.joins, Math.floor(row.timeSeconds / 60)]) {
+          const td = document.createElement('td');
+          td.textContent = String(value);
+          tr.appendChild(td);
+        }
+        this.boardBody.appendChild(tr);
+      }
+      this.boardEmpty.hidden = rows.length > 0;
+      const ledger = body.mode === 'supabase' ? 'Saved ledger (Supabase)' : body.mode === 'local-jsonl' ? 'Local saved ledger' : 'Ledger';
+      const when = typeof body.updatedAt === 'number' && Number.isFinite(body.updatedAt) ? ` · ${new Date(body.updatedAt).toLocaleTimeString()}` : '';
+      this.boardStatus.textContent = rows.length ? `${ledger} · top ${rows.length}${when}` : `${ledger} · no hunters recorded yet${when}`;
+    } catch (err) {
+      if (request.signal.aborted && this.boardRequest !== request) return; // left the screen or refreshed
+      this.boardStatus.textContent = (err as Error)?.name === 'AbortError' ? 'Leaderboard timed out · try Refresh' : 'Leaderboard unavailable · try Refresh';
+    } finally {
+      window.clearTimeout(timeout);
+      if (this.boardRequest === request) this.boardRequest = null;
+      this.boardRefresh.disabled = false;
+    }
+  }
+
+  /** Clean public link: origin + path only, never query, hash or the stored guest key. */
+  private async copyJoinLink(): Promise<void> {
+    const link = `${location.origin}${location.pathname}`;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(link);
+      this.joinLink.hidden = true;
+      this.shareStatus.textContent = 'Link copied. Friends open it and enter a name.';
+    } catch {
+      this.joinLink.value = link;
+      this.joinLink.hidden = false;
+      this.joinLink.focus();
+      this.joinLink.select();
+      this.shareStatus.textContent = 'Copy was blocked by the browser. The link is selected below; copy it by hand.';
+    }
   }
 
   private renderOutputs(): void {
