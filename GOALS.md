@@ -4,7 +4,7 @@ Latest user requirements, October 31, 2026. These are acceptance goals, not clai
 
 ## Game
 
-First-person haunted-world action. Enemy encounter level automatically determines which divine power the hunter draws from Ganesha, Hanuman, Shiva or Vishnu. Deities provide aid; there is no deity or power selection screen. Initial target is a first playable, with approximately50 simultaneous players as a separate measured target.
+First-person haunted-world action. Enemy encounter level automatically determines which divine power the hunter draws from Ganesha, Hanuman, Shiva or Vishnu. Deities provide aid; there is no deity or power selection screen. Initial target is a first playable, with approximately 50 simultaneous players as a separate measured target.
 
 ## Persistent minds, voices and world history
 
@@ -25,7 +25,7 @@ First-person haunted-world action. Enemy encounter level automatically determine
 | Agent Relay | Pantheon coordination and enemy warnings | A delivered message changes a recipient's reaction or strategy |
 | Mastra | Event-triggered agent/tool orchestration | A real agent invocation produces a validated gameplay response |
 | Supabase | Identity, canonical event log and lore retrieval | Events persist once, player identity is bound correctly, and prior lore is retrieved |
-| Freestyle | Public app/backend and agent hosting | The actual game endpoint runs on the allocated VM |
+| Freestyle | Actor/agent service hosting alongside the VPS game | The allocated VM runs a real game-related service |
 | Superserve | Isolated ghost-tactic rehearsal jobs | A real sandbox replay scores allowed tactics and informs a returning enemy |
 
 Superserve's proposed role follows its documented microVM/command-execution product; it is not being treated as an inference or voice provider. This rehearsal remains outside the real-time simulation. The authoritative game validates all returned strategies.
@@ -38,3 +38,11 @@ Superserve's proposed role follows its documented microVM/command-execution prod
 - Report missing configuration, offline fallback, synthetic capacity tests and unverified integrations explicitly.
 - Notify the user when project setup, basic screen, assets and first map are actually reviewable.
 - Use the ayushozha GitHub account. Push checked checkpoints and merge them into main through the repository's gates, leaving no PRs open. The coordinator owns publication.
+
+## Hosting and audio additions
+
+- The primary public game target is `https://issekaied.ayushojha.com`, on the existing `ayush-vps` connection. Preserve other hosted apps. Report DNS, TLS, preview and authoritative-backend status separately.
+- Use the nine downloaded, attributed music tracks. Preserve original files and serve optimized browser copies with meaningful music/voice/effects controls. Avoid downloading every track before play.
+- Include our own recitations of verified traditional Hanuman Chalisa, Shiva Tandava Stotram and Maha Mrityunjaya texts, with provenance and AI-voice disclosure. Do not redistribute an unlicensed commercial rendition.
+- Hanuman Chalisa accompanies Hanuman's automatic combat invocation, Shiva Tandava accompanies Shiva's invocation, and Maha Mrityunjaya supplies a protection/healing cue. These are requested mechanics pending implementation and runtime verification.
+- NPC introductions are separate fixed fictional assets; they are not evidence of dynamic memory or live AI dialogue.

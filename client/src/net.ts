@@ -135,9 +135,16 @@ export class NetClient {
     this.send({ type: 'cast', v: 1, seq: ++this.seq, aim });
   }
 
+  /** Tears the socket down without firing any further handlers (no retry, no late snapshot). */
   dispose(): void {
     this.disposed = true;
     window.clearTimeout(this.retry);
-    this.ws?.close();
+    const ws = this.ws;
+    this.ws = null;
+    this.selfId = null;
+    if (ws) {
+      ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+      ws.close();
+    }
   }
 }

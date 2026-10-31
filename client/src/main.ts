@@ -10,6 +10,7 @@ import { LocalPlayer } from './player';
 import { EntityLayer } from './entities';
 import { EffectsLayer } from './effects';
 import { Hud } from './hud';
+import { Menus, type Settings } from './menus';
 import { NetClient, sanitizeName } from './net';
 import { LocalPreview } from './offline';
 
@@ -23,11 +24,19 @@ const glow = new GlowLayer('glow', scene, { blurKernelSize: 32 });
 glow.intensity = 0.7;
 
 const hud = new Hud();
-buildWorld(scene, { report: (t) => hud.setMenuStatus(t) });
 const player = new LocalPlayer(scene, canvas);
 const entities = new EntityLayer(scene);
 const effects = new EffectsLayer(scene);
+const menus = new Menus({
+  onEnter: (name) => enter(name),
+  onResume: () => resume(),
+  onReturnToTitle: () => leaveToTitle(),
+  onSettings: (s) => applySettings(s),
+});
+applySettings(menus.settings);
+buildWorld(scene, { report: (t) => menus.setMainStatus(t) });
 
+// Session state. `net` doubles as the "a hunt is in progress" flag; everything below is reset by leaveToTitle().
 let net: NetClient | null = null;
 let preview: LocalPreview | null = null;
 let selfId: string | null = null;
@@ -39,9 +48,15 @@ let inputTimer = 0;
 const serverNow = () => net?.serverNow() ?? Date.now();
 const online = () => !!net?.online;
 
+function applySettings(s: Settings): void {
+  player.sensitivity = s.sensitivity;
+  player.reduceMotion = s.reduceMotion;
+}
+
 // ---- snapshots & events -----------------------------------------------------------------------
 
 function applySnapshot(snap: RoomSnapshot): void {
+  if (!net) return; // late message after return to title
   self = snap.players.find((p) => p.id === selfId) ?? null;
   if (self) {
     if (preview?.running) player.pos.y = self.position[1];
@@ -57,6 +72,7 @@ function applySnapshot(snap: RoomSnapshot): void {
 }
 
 function handleEvent(ev: GameEvent): void {
+  if (!net) return;
   const at = ev.position ? Vector3.FromArray(ev.position) : entities.positionOf(ev.toId ?? ev.fromId);
   const name = (id: string | undefined) => (id ? entities.enemyState(id)?.name ?? (id === selfId ? self?.name : undefined) ?? 'A hunter' : 'Someone');
   switch (ev.kind) {
@@ -142,19 +158,7 @@ function startInputLoop(): void {
 
 // ---- session ----------------------------------------------------------------------------------
 
-function enter(): void {
-  const nameInput = document.getElementById('name') as HTMLInputElement;
-  const name = sanitizeName(nameInput.value);
-  nameInput.value = name;
-  const button = document.getElementById('enter') as HTMLButtonElement;
-  button.disabled = true;
-  hud.showGame();
-  player.requestLock();
-
-  if (net) {
-    // Returning from the pause menu: nothing to reconnect.
-    return;
-  }
+function startSession(name: string): void {
   preview = new LocalPreview(name, {
     getSelf: () => ({ pos: player.pos, yaw: player.yaw, pitch: player.pitch }),
     onSnapshot: applySnapshot,
@@ -171,11 +175,12 @@ function enter(): void {
     onSnapshot: applySnapshot,
     onEvent: handleEvent,
     onStatus: (status, detail) => {
-      hud.setStatus(status, detail);
+      if (status === 'online') preview?.stop();
       if (status === 'offline' && preview && !preview.running) {
         selfId = preview.selfId;
         preview.start();
       }
+      hud.setStatus(status, detail, !!preview?.running);
     },
     onServerError: (code, message) => hud.whisper(`${code}: ${message}`, 'server', true),
   });
@@ -183,32 +188,74 @@ function enter(): void {
   startInputLoop();
 }
 
+/** Enter Bellgrave from the main menu (user gesture). Pointer lock is requested here and nowhere automatic. */
+function enter(rawName: string): void {
+  if (!net) startSession(sanitizeName(rawName));
+  hud.show();
+  menus.hide();
+  player.requestLock();
+}
+
+/** Resume from the pause screen; the click itself is the gesture that permits re-locking the mouse. */
+function resume(): void {
+  if (!net) {
+    menus.show('main');
+    return;
+  }
+  hud.show();
+  menus.hide();
+  player.requestLock();
+}
+
+/** Ends the hunt: stops network and preview, drops all server-owned views, resets local state, shows the title. */
+function leaveToTitle(): void {
+  window.clearInterval(inputTimer);
+  inputTimer = 0;
+  net?.dispose();
+  net = null;
+  preview?.stop();
+  preview = null;
+  selfId = null;
+  self = null;
+  lastHp = 100;
+  lastPredictedCast = null;
+  entities.clear();
+  hud.reset();
+  player.teleport(WORLD.spawn);
+  player.yaw = 0;
+  player.pitch = -0.02;
+  player.releaseLock();
+  menus.show('splash');
+}
+
 player.onAttack = attack;
 player.onLockChange = (locked) => {
-  if (!locked && net) hud.showMenu('Paused — the mouse is released. Press Enter Bellgrave to resume.');
+  if (!net) return; // no hunt in progress: the menus own the screen
   if (locked) {
-    hud.showGame();
-    (document.getElementById('enter') as HTMLButtonElement).disabled = false;
+    hud.show();
+    menus.hide();
+  } else {
+    menus.setPauseStatus('');
+    menus.show('pause');
   }
 };
-
-const enterButton = document.getElementById('enter') as HTMLButtonElement;
-enterButton.addEventListener('click', enter);
-(document.getElementById('name') as HTMLInputElement).addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') enter();
-});
+player.onLockError = (reason) => {
+  if (!net || player.locked) return; // a late error while we already hold the lock is not a failure
+  menus.setPauseStatus(`Mouse lock failed (${reason}). Click Resume to try again; browsers need a moment after Esc.`);
+  menus.show('pause');
+};
 canvas.addEventListener('click', () => {
-  if (net && !player.locked) player.requestLock();
+  if (net && !player.locked && menus.current === null) player.requestLock();
 });
 
-// Pre-connect preview of the arena behind the menu: camera idles at spawn looking at the chapel.
+// Idle view behind the title screens: camera at spawn looking at the chapel.
 player.yaw = 0;
 player.pitch = -0.02;
 player.teleport(WORLD.spawn);
 
 if (import.meta.env.DEV) {
   // Dev-only inspection handle for smoke tests; stripped from production builds.
-  (window as unknown as { __issekaied?: unknown }).__issekaied = { scene, player, entities };
+  (window as unknown as { __issekaied?: unknown }).__issekaied = { scene, player, entities, menus };
 }
 
 engine.runRenderLoop(() => {

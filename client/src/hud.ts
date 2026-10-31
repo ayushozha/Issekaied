@@ -35,8 +35,6 @@ export class Hud {
   private readonly cueText = $('invoke-cue-text');
   private readonly death = $('death');
   private readonly flashEl = $('flash');
-  private readonly menu = $('menu');
-  private readonly menuStatus = $('menu-status');
   private readonly channelEls = new Map<PowerId, HTMLLIElement>();
   private cooldowns: Record<PowerId, number> = { ganesha: 0, hanuman: 0, shiva: 0, vishnu: 0 };
   private cooldownTotal: Record<PowerId, number> = { ganesha: 1, hanuman: 1, shiva: 1, vishnu: 1 };
@@ -59,24 +57,42 @@ export class Hud {
     for (const id of POWER_IDS) new Image().src = CHANNELS[id].portrait;
   }
 
-  showGame(): void {
+  show(): void {
     this.root.hidden = false;
-    this.menu.hidden = true;
   }
 
-  showMenu(text = ''): void {
-    this.menu.hidden = false;
-    this.menuStatus.textContent = text;
+  /** Clears every per-session readout so a new hunt (or the title screen) starts from a blank HUD. */
+  reset(): void {
+    this.root.hidden = true;
+    this.whispers.replaceChildren();
+    this.enemies.replaceChildren();
+    this.players.replaceChildren();
+    this.enemyKey = '';
+    this.playerKey = '';
+    this.cooldowns = { ganesha: 0, hanuman: 0, shiva: 0, vishnu: 0 };
+    this.lastPower = null;
+    this.invocationName.textContent = '—';
+    this.invocationPortrait.hidden = true;
+    this.invocationCd.style.width = '0%';
+    this.selfHp.style.width = '100%';
+    this.selfHpText.textContent = '100';
+    this.death.hidden = true;
+    this.target.hidden = true;
+    this.offline.hidden = true;
+    this.cue.hidden = true;
+    this.setStatus('connecting', 'Connecting…', false);
   }
 
-  setMenuStatus(text: string): void {
-    this.menuStatus.textContent = text;
-  }
-
-  setStatus(kind: NetStatus, detail: string): void {
-    this.status.dataset.kind = kind;
-    this.status.textContent = kind === 'online' ? `Connected · ${detail}` : kind === 'offline' ? `Offline preview · ${detail}` : detail;
-    this.offline.hidden = kind !== 'offline';
+  /**
+   * Connection pill and OFFLINE PREVIEW banner. The banner follows the local preview, not the socket
+   * state: while the preview is running the courtyard is simulated locally even if a reconnect attempt
+   * is in flight, so the banner stays until a real welcome arrives and the pill says what the socket is doing.
+   */
+  setStatus(kind: NetStatus, detail: string, previewActive: boolean): void {
+    const simulated = previewActive && kind !== 'online';
+    this.status.dataset.kind = simulated ? 'offline' : kind;
+    this.status.textContent = kind === 'online' ? `Connected · ${detail}` : simulated ? `Offline preview · ${detail}` : detail;
+    this.offline.hidden = !simulated;
   }
 
   setSelf(p: PlayerState | null): void {

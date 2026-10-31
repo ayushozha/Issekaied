@@ -13,6 +13,7 @@ The player draws power automatically from Ganesha, Hanuman, Shiva or Vishnu acco
 - Character, ghost, map and divine-invocation artwork is available.
 - Licensed 3D environments and modular cemetery assets are downloaded, with source and attribution records.
 - A playable Babylon.js client includes the Bellgrave cemetery, first-person movement, ghost encounters and automatic deity powers.
+- Splash, main menu, pause, settings and return-to-title flows are implemented. Look sensitivity and reduced camera motion persist locally.
 - The current offline preview is explicitly labelled and does not persist or share ghost memories. The authoritative backend and live provider integrations are in progress.
 - Approximately 50 simultaneous players is a target pending measurement.
 
@@ -37,7 +38,7 @@ bun install
 bun run dev
 ```
 
-Open the Vite URL. Enter a hunter name and enter Bellgrave. Use WASD to move, Shift to sprint, mouse to look and click to invoke the power appropriate to the targeted ghost. Escape releases the mouse through the browser; a complete pause/settings flow is still in progress.
+Open the Vite URL. Enter a hunter name and enter Bellgrave. Use WASD to move, Shift to sprint, mouse to look and click to invoke the power appropriate to the targeted ghost. Escape releases the mouse and opens the pause flow. Resume requests mouse lock from your click; Return to title ends the local session. Settings adjust look sensitivity and camera motion. Browser Exit returns to the splash screen.
 
 When the backend is unavailable, the interface says **Offline preview**. Its enemy grudges are local demo state and are discarded when the preview ends. To use an available backend on another port, set `$env:ISSEKAIED_BACKEND_URL = "http://127.0.0.1:8790"` before starting Vite. The default is port 8787.
 
@@ -46,7 +47,7 @@ bun run typecheck
 bun run build
 ```
 
-The client type check, production build and browser movement/attack path were checked locally. They do not establish multiplayer capacity or live sponsor integration.
+The client type check, production build, browser movement/attack path, settings persistence and session teardown were checked locally. Pause and lock-refusal recovery were checked through scripted browser events; physical Escape and genuine browser lock refusal still need a manual pass. These checks do not establish multiplayer capacity or live sponsor integration.
 
 ## Configuration
 

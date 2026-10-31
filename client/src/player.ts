@@ -22,8 +22,12 @@ export class LocalPlayer {
   yaw = 0;
   pitch = 0;
   locked = false;
+  /** Settings-driven: mouse-look multiplier and head-bob opt-out. */
+  sensitivity = 1;
+  reduceMotion = false;
   onAttack: (() => void) | null = null;
   onLockChange: ((locked: boolean) => void) | null = null;
+  onLockError: ((reason: string) => void) | null = null;
   private readonly keys = new Set<string>();
   private readonly lantern: PointLight;
   private readonly history: Predicted[] = [];
@@ -56,19 +60,35 @@ export class LocalPlayer {
       if (!this.locked) this.keys.clear();
       this.onLockChange?.(this.locked);
     });
+    document.addEventListener('pointerlockerror', () => this.onLockError?.('the browser refused to lock the mouse'));
     document.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
-      this.yaw += e.movementX * LOOK_SPEED;
-      this.pitch = Math.min(MAX_PITCH, Math.max(-MAX_PITCH, this.pitch + e.movementY * LOOK_SPEED));
+      const k = LOOK_SPEED * this.sensitivity;
+      this.yaw += e.movementX * k;
+      this.pitch = Math.min(MAX_PITCH, Math.max(-MAX_PITCH, this.pitch + e.movementY * k));
     });
     canvas.addEventListener('mousedown', (e) => {
       if (e.button === 0 && this.locked) this.onAttack?.();
     });
   }
 
-  /** Pointer lock is only ever requested from a user gesture (the Enter button or a canvas click). */
+  /**
+   * Pointer lock is only ever requested from a user gesture (Enter, Resume or a canvas click).
+   * Failures surface through `onLockError` (promise rejection in Chromium, `pointerlockerror` elsewhere)
+   * so the UI can offer a retry instead of leaving the player stuck behind a hidden menu.
+   */
   requestLock(): void {
-    if (document.pointerLockElement !== this.canvas) this.canvas.requestPointerLock();
+    if (document.pointerLockElement === this.canvas) return;
+    try {
+      const result = this.canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+      result?.catch?.((err: unknown) => this.onLockError?.(err instanceof Error ? err.message : String(err)));
+    } catch (err) {
+      this.onLockError?.(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  releaseLock(): void {
+    if (document.pointerLockElement === this.canvas) document.exitPointerLock();
   }
 
   get sprinting(): boolean {
@@ -110,7 +130,7 @@ export class LocalPlayer {
     resolveCollisions(this.pos, WORLD.playerRadius);
 
     this.bobPhase += dt * (this.speed > 0.3 ? this.speed * 1.9 : 0);
-    const bob = Math.sin(this.bobPhase) * 0.035 * Math.min(1, this.speed / WORLD.walkSpeed);
+    const bob = this.reduceMotion ? 0 : Math.sin(this.bobPhase) * 0.035 * Math.min(1, this.speed / WORLD.walkSpeed);
     this.camera.position.set(this.pos.x, this.pos.y + bob, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0);
     this.lantern.position.set(this.pos.x, this.pos.y - 0.4, this.pos.z);

@@ -14,8 +14,8 @@ const PREVIEW_RANGE: Record<PowerId, number> = { ganesha: 8, hanuman: 12, shiva:
 const PREVIEW_DAMAGE = 34;
 const RETURN_MS = 10000;
 const ENEMY_RADIUS = 0.5;
-/** Haunts close to striking distance but never into the hunter's near-camera volume. */
-const MELEE_STOP = WORLD.playerRadius + ENEMY_RADIUS + 0.9;
+/** Haunts close to striking distance but never crowding the hunter's near-camera volume. */
+const MELEE_STOP = WORLD.playerRadius + ENEMY_RADIUS + 1.5;
 const MELEE_REACH = MELEE_STOP + 0.4;
 const STRATEGY_AFTER: Record<PowerId, GhostStrategy> = { ganesha: 'keep_distance', hanuman: 'flank', shiva: 'ambush', vishnu: 'keep_distance' };
 

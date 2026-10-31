@@ -30,6 +30,7 @@ const TINT_FOR_SPECIES: Record<Species, string> = {
   rakshasa: '#ff5a6a',
 };
 const HOVERING: ReadonlySet<Species> = new Set(['ghost']);
+const LABEL_MIN_DISTANCE = 3;
 /** Minimum cosine between aim and the direction to a haunt for it to count as targeted. */
 export const aimThreshold = (dist: number): number => (dist < 6 ? 0.93 : 0.985);
 
@@ -200,9 +201,12 @@ export class EntityLayer {
 
   update(dt: number): void {
     const k = 1 - Math.exp(-dt * 10);
+    const eye = this.scene.activeCamera?.globalPosition ?? null;
     for (const v of this.enemies.values()) {
       Vector3.LerpToRef(v.root.position, v.target, k, v.root.position);
       v.root.rotation.y = lerpAngle(v.root.rotation.y, v.targetYaw, k);
+      // Nameplates are unreadable at melee range and would otherwise fill the view; the HUD target line covers it.
+      if (eye) v.label.plane.setEnabled(Vector3.Distance(eye, v.root.position) > LABEL_MIN_DISTANCE);
       v.phase += dt;
       const hover = HOVERING.has(v.state.species) ? 0.35 + Math.sin(v.phase * 1.7) * 0.15 : 0;
       v.visual.position.y = -v.root.position.y + hover;
@@ -228,7 +232,7 @@ export class EntityLayer {
     fallback.position.y = height / 2;
     fallback.material = flatMaterial(this.scene, `enemy-${e.id}-fallback-mat`, tint.scale(0.3), tint.scale(0.6), 0.7);
     fallback.parent = visual;
-    const label = new Label(this.scene, root, height - e.position[1] + 0.9);
+    const label = new Label(this.scene, root, height - e.position[1] + 0.9, 2.2);
     const view: EnemyView = { root, visual, fallback, model: null, mats: [fallback.material], label, target: root.position.clone(), targetYaw: e.yaw, state: e, height, phase: Math.random() * 6 };
     this.enemies.set(e.id, view);
     void this.attachModel(view, e.species, tint);
@@ -278,6 +282,16 @@ export class EntityLayer {
     if (e.state === 'hunting') for (const m of view.mats) m.alpha = view.model ? baseAlpha : 0.7;
     const grudge = e.memory.banishments ? ` · grudge ${e.memory.banishments}` : '';
     view.label.draw(`${e.name}  ·  Lv ${e.level}`, `${e.species} · ${e.strategy.replace('_', ' ')}${grudge}`, STRATEGY_COLOR[e.strategy] ?? '#ccc', e.maxHp ? e.hp / e.maxHp : null);
+  }
+
+  /** Removes every server-owned view (return to title). In-flight model loads notice the disposed root. */
+  clear(): void {
+    for (const [id, v] of this.enemies) this.disposeEnemy(id, v);
+    for (const [id, v] of this.players) {
+      v.label.dispose();
+      v.root.dispose();
+      this.players.delete(id);
+    }
   }
 
   private disposeEnemy(id: string, v: EnemyView): void {
