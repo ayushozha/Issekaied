@@ -75,6 +75,8 @@ Enemy reactions happen immediately; strategy persistence runs separately with at
 
 **Agent Relay is in the gameplay path.** [`server/src/integrations/relay.ts`](server/src/integrations/relay.ts) uses `@agent-relay/sdk` with the private self-hosted Relaycast engine: `hivemind` delivers enemy warnings that recipients use to change tactics; `pantheon` shares invocation outcomes between divine agents. The Source also relays canonical world facts. This is the SDK integration, separate from installing the coding-session CLI. The official [Agent Relay framework guide](https://agentrelay.net/docs/communicate) and [Relaycast self-hosting guide](https://github.com/AgentWorkforce/relaycast#self-hosting) describe these supported integration paths.
 
+Stable sender identities publish to those shared channels; each server start opens a fresh receiving session. Ghost warnings and divine updates have separate delivery tracking even when they refer to the same gameplay event. Persistent history remains in Terse and Supabase.
+
 The public [`/health`](https://issekaied.ayushojha.com/health) endpoint exposes provider modes, reachability and sent/received counters. `terse` and `relay` identify actual provider paths; fallback modes are explicitly named. Counters are per process and reset on deployment. They are operational evidence, not sponsor billing receipts.
 
 Movement and combat never wait for model, database, actor-network or sandbox calls. Provider failures have explicit modes; a local fallback is never presented as a successful hosted integration.

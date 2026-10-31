@@ -117,6 +117,14 @@ class LocalBus implements Channels {
 }
 
 type LiveAgent = Awaited<ReturnType<AgentRelay['workspace']['register']>> extends infer R ? (R extends unknown[] ? never : R) : never;
+type Inbound = { metadata?: unknown; channel?: { name?: string }; target?: { kind: string; channelName?: string } };
+/**
+ * The installed SDK's `assembleAgentClient` gives every live agent its own scoped `addListener` and
+ * `events.disconnect()`, but the declared `RelayAgentClient` type omits them. Narrow structurally here.
+ */
+type ScopedListener = { addListener(selector: 'message.created', handler: (e: { message: Inbound }) => void): () => void; events: { disconnect(): Promise<void> } };
+/** Warning and pantheon notes for one gameplay event share an eventId; internal dedupe keys carry the kind. */
+const dedupeKey = (kind: 'warning' | 'pantheon', eventId: string) => `${kind}:${eventId}`;
 
 const describeWarning = (w: HivemindWarning) =>
   `${w.ghostName} fell to ${w.hunterName} through ${w.power} in ${w.roomId}. Suggest ${w.suggestedStrategy.replace('_', ' ')}. [${w.eventId}]`;
@@ -128,6 +136,10 @@ class RelayChannels implements Channels {
   private relay: AgentRelay | null = null;
   private hivemind: LiveAgent | null = null;
   private pantheon: LiveAgent | null = null;
+  /** Fresh receiver registered per boot; its token is never persisted. Senders keep their stable identities. */
+  private receiver: LiveAgent | null = null;
+  private receiverName = '';
+  private unlisten: (() => void) | null = null;
   private ready = false;
   private sent = 0;
   private received = 0;
@@ -198,9 +210,42 @@ class RelayChannels implements Channels {
     await this.joinChannel(this.pantheon, pantheon, 'Deity context shared across every room and game.');
     await this.joinChannel(this.pantheon, hivemind, 'Enemy warnings; recipients change tactics on delivery.');
     await this.joinChannel(this.hivemind, pantheon, 'Deity context shared across every room and game.');
-    relay.addListener('message.created', ({ message }) => this.receive(message));
+    // A fresh receiving stream avoids reusing persisted sender consumer positions; its scoped listener opens
+    // only its own stream while stable senders remain REST producers.
+    await this.listenFresh(relay, agentPrefix, hivemind, pantheon);
+    if (this.closed) {
+      await this.disposeReceiver();
+      return;
+    }
     this.ready = true;
     this.agentNames = [this.hivemind.name, this.pantheon.name];
+  }
+
+  private async listenFresh(relay: AgentRelay, agentPrefix: string, hivemind: string, pantheon: string): Promise<void> {
+    const name = `${agentPrefix}-receiver-${crypto.randomUUID().slice(0, 8)}`;
+    try {
+      this.receiver = (await relay.workspace.register({ name, type: 'agent', persona: 'Issekaied receiver: consumes hivemind and pantheon traffic for this server boot.' })) as LiveAgent;
+      this.receiverName = this.receiver.name;
+      await this.receiver.channels.join(hivemind);
+      await this.receiver.channels.join(pantheon);
+      this.unlisten = (this.receiver as unknown as ScopedListener).addListener('message.created', ({ message }) => this.receive(message));
+    } catch (err) {
+      await this.disposeReceiver();
+      throw new Error(`receiver ${name}: ${(err as Error).message}`);
+    }
+  }
+
+  /** Detach the scoped listener and close the receiver's own event stream. The identity may stay registered for audit. */
+  private async disposeReceiver(): Promise<void> {
+    this.unlisten?.();
+    this.unlisten = null;
+    const receiver = this.receiver as unknown as ScopedListener | null;
+    this.receiver = null;
+    try {
+      await receiver?.events.disconnect();
+    } catch (err) {
+      this.lastError = `disconnect receiver: ${(err as Error).message}`;
+    }
   }
 
   private async agent(relay: AgentRelay, tokens: Record<string, string>, name: string, persona: string): Promise<LiveAgent> {
@@ -255,21 +300,21 @@ class RelayChannels implements Channels {
     }
   }
 
-  private receive(message: { metadata?: unknown; channel?: { name?: string }; target?: { kind: string; channelName?: string } }): void {
+  private receive(message: Inbound): void {
     const channel = message.channel?.name ?? (message.target?.kind === 'channel' ? message.target.channelName : undefined);
     const meta = message.metadata;
     if (!meta || typeof meta !== 'object') return;
     const kind = (meta as { issekaied?: string }).issekaied;
     if (kind === 'warning' && channel !== this.names.pantheon) {
       const parsed = warningSchema.safeParse(meta);
-      if (!parsed.success || !this.firstTime(parsed.data.eventId)) return;
+      if (!parsed.success || !this.firstTime(dedupeKey('warning', parsed.data.eventId))) return;
       this.received += 1;
       this.lastReceivedAt = Date.now();
       const { issekaied: _tag, ...w } = parsed.data;
       this.bus.deliverWarning(w, 'relay');
     } else if (kind === 'pantheon' && channel !== this.names.hivemind) {
       const parsed = noteSchema.safeParse(meta);
-      if (!parsed.success || !this.firstTime(parsed.data.eventId)) return;
+      if (!parsed.success || !this.firstTime(dedupeKey('pantheon', parsed.data.eventId))) return;
       this.received += 1;
       this.lastReceivedAt = Date.now();
       const { issekaied: _tag, ...n } = parsed.data;
@@ -277,34 +322,36 @@ class RelayChannels implements Channels {
     }
   }
 
-  /** Dedupe deliveries and cancel the local echo fallback for a message we sent ourselves. */
-  private firstTime(eventId: string): boolean {
-    const timer = this.awaitingEcho.get(eventId);
+  /** Dedupe deliveries (by kind:eventId) and cancel the local echo fallback for a message we sent ourselves. */
+  private firstTime(key: string): boolean {
+    const timer = this.awaitingEcho.get(key);
     if (timer) {
       clearTimeout(timer);
-      this.awaitingEcho.delete(eventId);
+      this.awaitingEcho.delete(key);
     }
-    if (this.seen.has(eventId)) return false;
-    this.seen.add(eventId);
+    if (this.seen.has(key)) return false;
+    this.seen.add(key);
     if (this.seen.size > 2000) this.seen.delete(this.seen.values().next().value as string);
     return true;
   }
 
-  private async send(agent: LiveAgent | null, channel: string, text: string, metadata: Record<string, unknown>, eventId: string, local: () => void): Promise<void> {
+  private async send(agent: LiveAgent | null, channel: string, text: string, metadata: Record<string, unknown>, key: string, local: () => void): Promise<void> {
     if (!this.ready || !agent) {
       local();
       return;
     }
     try {
-      await agent.sendMessage({ to: `#${channel}`, text, metadata, idempotencyKey: eventId });
+      await agent.sendMessage({ to: `#${channel}`, text, metadata, idempotencyKey: key });
       this.sent += 1;
+      // A fast callback may already have delivered this message before the send promise resolved.
+      if (this.seen.has(key)) return;
       this.awaitingEcho.set(
-        eventId,
+        key,
         setTimeout(() => {
-          this.awaitingEcho.delete(eventId);
-          if (this.seen.has(eventId)) return;
+          this.awaitingEcho.delete(key);
+          if (this.seen.has(key)) return;
           this.echoMissing += 1;
-          this.seen.add(eventId);
+          this.seen.add(key);
           local();
         }, ECHO_GRACE_MS),
       );
@@ -317,11 +364,11 @@ class RelayChannels implements Channels {
   }
 
   warn(w: HivemindWarning): Promise<void> {
-    return this.send(this.hivemind, this.names.hivemind, describeWarning(w), { issekaied: 'warning', ...w }, w.eventId, () => this.bus.deliverWarning(w, 'local'));
+    return this.send(this.hivemind, this.names.hivemind, describeWarning(w), { issekaied: 'warning', ...w }, dedupeKey('warning', w.eventId), () => this.bus.deliverWarning(w, 'local'));
   }
 
   share(n: PantheonNote): Promise<void> {
-    return this.send(this.pantheon, this.names.pantheon, describeNote(n), { issekaied: 'pantheon', ...n }, n.eventId, () => this.bus.deliverNote(n, 'local'));
+    return this.send(this.pantheon, this.names.pantheon, describeNote(n), { issekaied: 'pantheon', ...n }, dedupeKey('pantheon', n.eventId), () => this.bus.deliverNote(n, 'local'));
   }
 
   status(): Record<string, unknown> {
@@ -332,6 +379,7 @@ class RelayChannels implements Channels {
       ready: this.ready,
       channels: [this.names.hivemind, this.names.pantheon],
       agents: this.agentNames,
+      receiver: this.receiverName || undefined,
       sent: this.sent,
       received: this.received,
       lastReceivedAt: this.lastReceivedAt || undefined,
@@ -344,10 +392,12 @@ class RelayChannels implements Channels {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.ready = false;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
     for (const t of this.awaitingEcho.values()) clearTimeout(t);
     this.awaitingEcho.clear();
+    await this.disposeReceiver();
   }
 }
 
