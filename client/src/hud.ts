@@ -86,6 +86,14 @@ export class Hud {
       dev.hidden = false;
       dev.addEventListener('click', () => h.onDevPreview());
     }
+    // Under pointer lock the HUD is pointer-events:none, so the wheel scrolls the leaderboard list directly.
+    window.addEventListener('wheel', (e) => {
+      const list = $('leaderboard-list');
+      if (this.root.hidden || !document.pointerLockElement || e.ctrlKey || e.metaKey || !e.deltaY || list.scrollHeight <= list.clientHeight) return;
+      const step = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? list.clientHeight : 1;
+      list.scrollTop += e.deltaY * step;
+      e.preventDefault();
+    }, { passive: false });
   }
 
   show(): void {
@@ -128,7 +136,8 @@ export class Hud {
         list.appendChild(li);
       }
       const onlineCount = typeof body.onlineCount === 'number' ? body.onlineCount : online;
-      $('leaderboard-status').textContent = `${body.mode === 'supabase' ? 'Saved in Supabase' : 'Local saved ledger'} · ${rows.length ? `${rows.length} hunters · ${onlineCount} online` : 'awaiting hunters'}`;
+      const overflow = list.scrollHeight > list.clientHeight ? ' · wheel to browse' : '';
+      $('leaderboard-status').textContent = `${body.mode === 'supabase' ? 'Saved in Supabase' : 'Local saved ledger'} · ${rows.length ? `${rows.length} hunters · ${onlineCount} online${overflow}` : 'awaiting hunters'}`;
     } catch {
       if (!this.root.hidden) $('leaderboard-status').textContent = 'Ledger unavailable · retrying';
     } finally {
