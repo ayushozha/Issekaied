@@ -23,7 +23,7 @@ A first-person Halloween adventure built around **stateful characters** and **ag
 
 **The demo loop:** banish a ghost → **Terse** saves who did it → **Agent Relay** warns other ghosts → the world reacts when you return. Ask the **OpenAI Realtime** Source for directions, and see the recorded hunt on the **Supabase** leaderboard.
 
-[Integration code and runtime evidence](#track-technology-in-the-running-game) · [Demo script](docs/DEMO-SCRIPT-2MIN.md) · [Verification notes](docs/DEMO.md) · [Asset credits](docs/MAP-ASSETS.md)
+[Integration code and runtime evidence](#track-technology-in-the-running-game) · [Video script](docs/DEMO-SCRIPT-2MIN.md) · [Live presentation](docs/LIVE-DEMO-SCRIPT.md) · [Verification notes](docs/DEMO.md) · [Asset credits](docs/MAP-ASSETS.md)
 
 <p align="center"><img src="docs/assets/submission-cover.jpg" width="480" alt="Issekaied concept cover: the Returned hunter, divine protectors and Bellgrave ghosts"></p>
 
@@ -43,6 +43,7 @@ The hunter draws strength from Ganesha, Hanuman, Shiva and Vishnu according to t
 | --- | --- |
 | WASD / Shift | Move / sprint |
 | Left mouse / right mouse | Primary attack / protective ward |
+| Mouse wheel | Browse the in-game leaderboard |
 | Q | Invoke the appropriate divine incantation |
 | R | Recovery mantra |
 | E | Shrine, portal or explicit return after defeat |
