@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { powerForEnemyLevel, type CombatAction, type Vec3 } from '../../shared/protocol';
 import { counterStrategy } from '../../actor/src/memory.ts';
-import { HEAL, IDLE_INACTIVE_MS, INCANTATION_HP_COST, PLAYER_MAX_HP, POWERS, PRIMARY, STALE_INPUT_MS, WARD, enemyMaxHp, returnDelayMs } from './combat.ts';
+import { ENEMY_ATTACK_INTERVAL_MS, HEAL, IDLE_INACTIVE_MS, INCANTATION_HP_COST, PLAYER_MAX_HP, POWERS, PRIMARY, STALE_INPUT_MS, WARD, enemyMaxHp, returnDelayMs } from './combat.ts';
 import type { ServerEvent } from './events.ts';
 import { Room, playerIdFor, type RoomEnemy, type RoomPlayer, type RoomSignal } from './room.ts';
-import { ADVENTURE, MELEE_STOP, WORLD, dist2d, inSafeZone, xz } from './world.ts';
+import { ADVENTURE, MELEE_REACH, MELEE_STOP, WORLD, dist2d, inSafeZone, xz } from './world.ts';
 
 const KEY_A = 'guest-key-aaaaaaaa-1111';
 const KEY_B = 'guest-key-bbbbbbbb-2222';
@@ -461,6 +461,107 @@ describe('local encounters', () => {
     const ids = events.map((e) => e.eventId);
     expect(new Set(ids).size).toBe(ids.length);
     tick();
+  });
+});
+
+describe('engagement: every tactic ends in a strike', () => {
+  const TICK_MS = 50;
+  const hitsOn = (events: ServerEvent[], e: RoomEnemy, p: RoomPlayer) => events.filter((ev) => ev.kind === 'hit' && ev.fromId === e.id && ev.toId === p.id);
+
+  for (const strategy of ['chase', 'keep_distance', 'flank', 'ambush'] as const) {
+    test(`${strategy}: a stationary hunter inside local aggro takes a first hit within 8 s and repeated, cooldown-spaced hits`, () => {
+      const { room, join, idle, events } = makeRoom();
+      const a = join(KEY_A, 'Ayla');
+      const morrow = room.enemy('morrow')!;
+      expect(room.setStrategy(morrow.id, strategy, 'test', false)).toBe(true);
+      a.x = morrow.x;
+      a.z = morrow.z - 6; // inside the 8 m ambient aggro, clear ground
+      idle(a, 160); // 8 s of deliberate presence, standing still
+      const hits = hitsOn(events, morrow, a);
+      expect(hits.length).toBeGreaterThanOrEqual(2);
+      expect(hits[0]!.tick * TICK_MS).toBeLessThanOrEqual(8000);
+      for (let i = 1; i < hits.length; i++) expect((hits[i]!.tick - hits[i - 1]!.tick) * TICK_MS).toBeGreaterThanOrEqual(ENEMY_ATTACK_INTERVAL_MS);
+      expect(a.hp).toBeLessThan(PLAYER_MAX_HP);
+      expect(a.hp).toBeGreaterThan(0);
+    });
+  }
+
+  test('keep_distance repositions briefly after a strike, never back to a 9 m standoff, then strikes again', () => {
+    const { room, join, idle, events } = makeRoom();
+    const a = join(KEY_A, 'Ayla');
+    const morrow = room.enemy('morrow')!;
+    room.setStrategy(morrow.id, 'keep_distance', 'test', false);
+    a.x = morrow.x;
+    a.z = morrow.z - 6;
+    let first = -1;
+    let second = -1;
+    let widest = 0;
+    for (let i = 0; i < 200 && second < 0; i++) {
+      idle(a, 1);
+      const n = hitsOn(events, morrow, a).length;
+      if (n >= 1 && first < 0) first = i;
+      if (first >= 0) widest = Math.max(widest, dist2d(a, morrow));
+      if (n >= 2) second = i;
+    }
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(second).toBeGreaterThan(first);
+    expect((second - first) * TICK_MS).toBeLessThanOrEqual(2500); // reposition is brief, then it commits again
+    expect(widest).toBeGreaterThan(MELEE_REACH + 0.5); // it really did step out of reach between strikes
+    expect(widest).toBeLessThan(7); // but did not retreat to the old 9–12 m hold
+  });
+
+  test('ambush with extended aggro: a target acquired at 10 m is held briefly, then charged and struck', () => {
+    const { room, join, idle, events } = makeRoom();
+    const a = join(KEY_A, 'Ayla');
+    const morrow = room.enemy('morrow')!;
+    room.setStrategy(morrow.id, 'ambush', 'test', false);
+    morrow.aggroBonus = 3; // echo scaling / plan: aggro reaches 11 m
+    a.x = morrow.x;
+    a.z = morrow.z - 10;
+    idle(a, 1);
+    expect(morrow.targetId).toBe(a.id);
+    idle(a, 10); // half a second into the windup it is still lying in wait beyond 9 m
+    expect(dist2d(a, morrow)).toBeGreaterThan(9);
+    expect(hitsOn(events, morrow, a)).toHaveLength(0);
+    idle(a, 200); // the windup is finite: it charges and strikes repeatedly
+    expect(hitsOn(events, morrow, a).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('a struck haunt retaliates against a shooter inside its home leash but outside ambient aggro; neighbours stay put', () => {
+    const { room, join, idle, cast, aimAt, events } = makeRoom();
+    const a = join(KEY_A, 'Ayla');
+    const morrow = room.enemy('morrow')!;
+    a.x = morrow.home.x;
+    a.z = morrow.home.z - 11; // 8.5–13.5 m from the patrolling haunt: outside 8 m aggro, inside the 14 m leash
+    idle(a, 5);
+    expect(dist2d(a, morrow)).toBeGreaterThan(ADVENTURE.aggroRadius);
+    expect(morrow.targetId).toBeNull();
+    const hpBefore = morrow.hp;
+    cast(a, 'primary', aimAt(a, morrow));
+    expect(morrow.hp).toBeLessThan(hpBefore);
+    expect(morrow.targetId).toBe(a.id);
+    for (const e of room.enemies) if (e.id !== morrow.id) expect(e.targetId).toBeNull();
+    idle(a, 200);
+    expect(hitsOn(events, morrow, a).length).toBeGreaterThanOrEqual(1);
+    expect(dist2d(morrow, morrow.home)).toBeLessThanOrEqual(ADVENTURE.leashRadius + 1e-6);
+  });
+
+  test('a shooter beyond the home leash damages a haunt but is neither acquired nor followed', () => {
+    const { room, join, idle, cast, aimAt, events } = makeRoom();
+    const a = join(KEY_A, 'Ayla');
+    const morrow = room.enemy('morrow')!;
+    a.x = morrow.home.x;
+    a.z = morrow.home.z - (ADVENTURE.leashRadius + 1.5); // inside primary reach (18 m), outside the leash
+    idle(a, 5);
+    const hpBefore = morrow.hp;
+    cast(a, 'primary', aimAt(a, morrow));
+    expect(morrow.hp).toBeLessThan(hpBefore);
+    expect(morrow.targetId).toBeNull();
+    idle(a, 100);
+    expect(morrow.targetId).toBeNull();
+    expect(hitsOn(events, morrow, a)).toHaveLength(0);
+    expect(dist2d(morrow, morrow.home)).toBeLessThanOrEqual(ADVENTURE.leashRadius + 1e-6);
+    for (const e of room.enemies) expect(e.targetId).toBeNull();
   });
 });
 

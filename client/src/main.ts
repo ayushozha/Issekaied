@@ -119,6 +119,7 @@ function applySettings(s: Settings): void {
   player.sensitivity = s.sensitivity;
   player.reduceMotion = s.reduceMotion;
   effects.setReducedMotion(s.reduceMotion);
+  entities.setReducedMotion(s.reduceMotion);
   audio?.applySettings(s);
 }
 
@@ -305,6 +306,8 @@ function handleEvent(ev: GameEvent): void {
     }
     case 'hit':
       if (at) effects.hit(ev.power, at);
+      // Any confirmed NPC hit reads as an attack; no-op unless fromId is a known enemy.
+      if (at) entities.animateAttack(ev.fromId, at, ev.eventId);
       if (ev.toId === selfId) {
         audio.sfx.hurt();
         npcLaugh(ev.fromId, LAUGH_RANGE);
