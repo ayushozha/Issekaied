@@ -77,6 +77,10 @@ const ATTACK_DURATION = 0.38;
 const ATTACK_PULLBACK = 0.14;
 const ATTACK_REACH_MIN = 0.2;
 const ATTACK_REACH_MAX = 0.6;
+/** Reduced-motion strike: no wind-up, small reach toward the target, ease-out back to exactly zero. */
+const ATTACK_SOFT_PEAK = 0.05;
+const ATTACK_SOFT_DURATION = 0.18;
+const ATTACK_SOFT_REACH = 0.1;
 /** Remembered event ids per enemy; ample for a burst of distinct server hits, bounded memory. */
 const ATTACK_SEEN_MAX = 4;
 
@@ -175,6 +179,8 @@ interface EnemyView {
   atkReach: number;
   atkFrom: number;
   atkSeen: string[];
+  /** Mode captured per strike (reduced motion) so a mid-cue toggle can't change its curve. */
+  atkSoft: boolean;
 }
 
 interface PlayerView {
@@ -271,9 +277,9 @@ export class EntityLayer {
 
   /**
    * Readable attack on a server-confirmed hit by `enemyId`. No-op for non-enemies (hunter attackers), hidden
-   * haunts, reduced motion, or an event id this enemy already played. A new distinct hit restarts the pose
-   * only once the current lunge has peaked, starting from the current offset (no pop); earlier ones are
-   * absorbed by the strike already on screen. Only `visual.position.x/z` move; root/target/y stay untouched.
+   * haunts, or an event id this enemy already played; reduced motion plays a tiny no-wind-up strike instead.
+   * A new distinct hit restarts the pose only once the current lunge has peaked, starting from the current
+   * offset (no pop); earlier ones are absorbed by the strike already on screen. Only `visual.position.x/z` move; root/target/y stay untouched.
    */
   animateAttack(enemyId: string, hitTarget: Vector3, eventId: string): void {
     const v = this.enemies.get(enemyId);
@@ -283,8 +289,7 @@ export class EntityLayer {
       v.atkSeen.push(eventId);
       if (v.atkSeen.length > ATTACK_SEEN_MAX) v.atkSeen.shift();
     }
-    if (this.reducedMotion) return;
-    if (v.atkT >= 0 && v.atkT < ATTACK_STRIKE) return;
+    if (v.atkT >= 0 && v.atkT < (v.atkSoft ? ATTACK_SOFT_PEAK : ATTACK_STRIKE)) return;
     const dx = hitTarget.x - v.root.position.x;
     const dz = hitTarget.z - v.root.position.z;
     const dist = Math.hypot(dx, dz);
@@ -293,11 +298,14 @@ export class EntityLayer {
     v.atkFrom = v.atkT >= 0 ? v.visual.position.x * (dx / dist) + v.visual.position.z * (dz / dist) : 0;
     v.atkDirX = dx / dist;
     v.atkDirZ = dz / dist;
-    v.atkReach = Math.min(ATTACK_REACH_MAX, Math.max(ATTACK_REACH_MIN, dist * 0.45));
+    v.atkSoft = this.reducedMotion;
+    v.atkReach = v.atkSoft
+      ? Math.min(ATTACK_SOFT_REACH, dist * 0.45)
+      : Math.min(ATTACK_REACH_MAX, Math.max(ATTACK_REACH_MIN, dist * 0.45));
     v.atkT = 0;
   }
 
-  /** Disables the attack lunge; enabling it immediately returns every running pose to neutral. */
+  /** Shrinks the attack to a tiny strike; enabling it immediately returns every running pose to neutral. */
   setReducedMotion(on: boolean): void {
     this.reducedMotion = on;
     if (on) for (const v of this.enemies.values()) this.resetAttack(v);
@@ -313,6 +321,11 @@ export class EntityLayer {
   private attackOffset(v: EnemyView): number {
     const t = v.atkT;
     const ease = (a: number) => a * a * (3 - 2 * a);
+    if (v.atkSoft) {
+      if (t < ATTACK_SOFT_PEAK) return v.atkFrom + (v.atkReach - v.atkFrom) * (1 - (1 - t / ATTACK_SOFT_PEAK) ** 2);
+      const a = 1 - Math.min(1, (t - ATTACK_SOFT_PEAK) / (ATTACK_SOFT_DURATION - ATTACK_SOFT_PEAK));
+      return v.atkReach * a * a;
+    }
     if (t < ATTACK_WINDUP) return v.atkFrom + (-ATTACK_PULLBACK - v.atkFrom) * ease(t / ATTACK_WINDUP);
     if (t < ATTACK_STRIKE) {
       const a = (t - ATTACK_WINDUP) / (ATTACK_STRIKE - ATTACK_WINDUP);
@@ -379,7 +392,7 @@ export class EntityLayer {
       v.visual.position.y = -v.root.position.y + v.base + hover;
       if (v.atkT >= 0) {
         v.atkT += dt;
-        if (v.atkT >= ATTACK_DURATION) this.resetAttack(v);
+        if (v.atkT >= (v.atkSoft ? ATTACK_SOFT_DURATION : ATTACK_DURATION)) this.resetAttack(v);
         else {
           const s = this.attackOffset(v);
           v.visual.position.x = v.atkDirX * s;
@@ -452,7 +465,7 @@ export class EntityLayer {
     marker.isPickable = false;
     this.glow?.addExcludedMesh(marker);
     const label = new Label(this.scene, visual, 1.75, 1.3, this.glow);
-    const view: EnemyView = { root, visual, marker, sprite: null, spriteMat: null, shadow: null, label, target: root.position.clone(), state: e, key, height: 1.5, base: def?.base ?? 0.1, phase: Math.random() * 6, hitTimer: 0, alpha: 1, alphaGoal: 1, atkT: -1, atkDirX: 0, atkDirZ: 0, atkReach: 0, atkFrom: 0, atkSeen: [] };
+    const view: EnemyView = { root, visual, marker, sprite: null, spriteMat: null, shadow: null, label, target: root.position.clone(), state: e, key, height: 1.5, base: def?.base ?? 0.1, phase: Math.random() * 6, hitTimer: 0, alpha: 1, alphaGoal: 1, atkT: -1, atkDirX: 0, atkDirZ: 0, atkReach: 0, atkFrom: 0, atkSeen: [], atkSoft: false };
     this.enemies.set(e.id, view);
     if (def) {
       this.ensureAtlas(def.atlas);

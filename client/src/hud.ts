@@ -104,25 +104,31 @@ export class Hud {
     try {
       const response = await fetch('/api/leaderboard', { signal: request.signal });
       if (!response.ok) throw new Error('ledger unavailable');
-      const body = await response.json() as { mode?: string; players?: unknown[]; entries?: unknown[] };
+      const body = await response.json() as { mode?: string; players?: unknown[]; entries?: unknown[]; onlineCount?: unknown; total?: unknown };
       if (this.root.hidden) return;
       const rows = body.players ?? body.entries;
       if (!Array.isArray(rows)) throw new Error('ledger unavailable');
       const list = $('leaderboard-list');
       list.replaceChildren();
-      for (const raw of rows.slice(0, 5)) {
+      let online = 0;
+      for (const raw of rows) {
+        // Every registered hunter; the list scrolls instead of truncating.
         const row = raw as Record<string, unknown>;
         const number = (key: string) => typeof row[key] === 'number' && Number.isFinite(row[key]) ? Math.max(0, Math.floor(row[key] as number)) : 0;
+        const isOnline = row.online === true; // older payloads lack the field: treated as not shown online
+        if (isOnline) online += 1;
         const li = document.createElement('li');
+        li.dataset.online = String(isOnline);
         const name = document.createElement('span');
-        name.textContent = typeof row.name === 'string' ? row.name.slice(0, 24) : 'Hunter';
+        name.textContent = `${isOnline ? '● ' : ''}${typeof row.name === 'string' ? row.name.slice(0, 24) : 'Hunter'}`;
         const stats = document.createElement('strong');
         stats.textContent = `${number('kills')} / ${number('deaths')}`;
         li.append(name, stats);
-        li.title = `${number('joins')} arrivals · ${Math.floor(number('timeSeconds') / 60)} minutes played`;
+        li.title = `${isOnline ? 'In Bellgrave now · ' : ''}${number('joins')} arrivals · ${Math.floor(number('timeSeconds') / 60)} minutes played`;
         list.appendChild(li);
       }
-      $('leaderboard-status').textContent = `${body.mode === 'supabase' ? 'Saved in Supabase' : 'Local saved ledger'} · ${rows.length ? 'updated live' : 'awaiting hunters'}`;
+      const onlineCount = typeof body.onlineCount === 'number' ? body.onlineCount : online;
+      $('leaderboard-status').textContent = `${body.mode === 'supabase' ? 'Saved in Supabase' : 'Local saved ledger'} · ${rows.length ? `${rows.length} hunters · ${onlineCount} online` : 'awaiting hunters'}`;
     } catch {
       if (!this.root.hidden) $('leaderboard-status').textContent = 'Ledger unavailable · retrying';
     } finally {

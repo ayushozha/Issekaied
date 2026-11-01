@@ -31,7 +31,7 @@
       </section>
 
       <section id="leaderboard" class="panel leaderboard" aria-label="Hunter leaderboard">
-        <div class="label">Leaderboard · Top 5</div>
+        <div class="label">Leaderboard · All hunters</div>
         <div class="leaderboard-heading"><span>Hunter</span><span>Banish / fallen</span></div>
         <ol id="leaderboard-list"></ol>
         <div id="leaderboard-status" class="small">Reading the ledger…</div>
@@ -144,18 +144,19 @@
       </section>
 
       <section id="screen-leaderboard" class="screen board" data-screen="leaderboard" hidden>
-        <h2>Leaderboard · Top 10</h2>
+        <h2>Leaderboard · All hunters</h2>
         <div class="settings-box board-box">
           <p id="leaderboard-screen-status" class="menu-status" aria-live="polite">Reading the ledger…</p>
           <div class="board-wrap">
             <table class="board-table" aria-describedby="leaderboard-screen-status">
               <thead>
-                <tr><th scope="col">Hunter</th><th scope="col">Banishes</th><th scope="col">Deaths</th><th scope="col">Joins</th><th scope="col">Minutes</th></tr>
+                <tr><th scope="col">Hunter</th><th scope="col">Presence</th><th scope="col">Banishes</th><th scope="col">Deaths</th><th scope="col">Joins</th><th scope="col">Minutes</th></tr>
               </thead>
               <tbody id="leaderboard-table-body"></tbody>
             </table>
           </div>
           <p id="leaderboard-empty" class="fine" hidden>Be the first hunter.</p>
+          <p class="fine">Hunters appear here after entering Bellgrave, not just by opening the page. Presence refreshes while this screen is open.</p>
         </div>
         <button id="btn-leaderboard-refresh" class="btn" type="button">Refresh</button>
         <button id="btn-leaderboard-back" class="btn" type="button">Back</button>

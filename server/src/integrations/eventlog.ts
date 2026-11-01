@@ -48,7 +48,15 @@ const bump = (stats: Map<string, Stats>, e: Pick<StoredEvent, 'kind' | 'fromId' 
   else if (e.kind === 'session') s.timeMs += Math.max(0, e.durationMs ?? 0);
   stats.set(e.fromId, s);
 };
-const sortRows = (rows: LeaderboardRow[]) => rows.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || b.timeSeconds - a.timeSeconds);
+/** Deterministic order: kills desc, deaths asc, time desc, then the stable player id so equal rows never shuffle between pages. */
+export const sortRows = <T extends LeaderboardRow>(rows: T[]): T[] =>
+  rows.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || b.timeSeconds - a.timeSeconds || (a.playerId < b.playerId ? -1 : a.playerId > b.playerId ? 1 : 0));
+/** Supabase reads are paged with the SDK's `.range`; a page shorter than this ends the read (never a server default cap). */
+const PAGE = 500;
+const MAX_PAGES = 200;
+/** Canonical event kinds that feed the stats, used to backfill registry-only (legacy) hunters. */
+const STAT_KINDS = ['banish', 'death', 'join', 'session'] as const;
+const ID_BATCH = 100;
 
 export interface EventQuery {
   participantIds: string[];
@@ -70,7 +78,14 @@ export interface EventLog {
   record(roomId: string, event: ServerEvent): void;
   /** Server-authored join/session facts for the leaderboard (fresh server event id, elapsed server time). */
   bookkeeping(roomId: string, kind: BookkeepingKind, playerId: string, eventId: string, durationMs?: number): void;
-  /** Top rows: kills desc, deaths asc, time desc. Supabase reads the root-owned `player_leaderboard` view. */
+  /**
+   * Every registered hunter (registry ∪ anyone with stat events), sorted kills desc, deaths asc, time desc,
+   * id. With no `limit` this is the complete set; an explicit limit returns the first N of that same order.
+   * Registered hunters without a single stat event are real zero rows; legacy hunters with canonical
+   * banish/death events but no join bookkeeping keep those real totals (joins 0). Supabase reads the
+   * root-owned `player_leaderboard` view, the `players` registry and, for registry-only ids, `game_events`,
+   * all in bounded `.range` pages.
+   */
   leaderboard(limit?: number): Promise<LeaderboardRow[]>;
   upsertPlayer(player: { id: string; name: string }): void;
   recent(query: EventQuery): Promise<StoredEvent[]>;
@@ -162,10 +177,15 @@ class LocalJsonlLog implements EventLog {
     if (this.pending.length < MAX_QUEUE) this.pending.push(JSON.stringify(stored));
   }
 
-  async leaderboard(limit = 10): Promise<LeaderboardRow[]> {
+  async leaderboard(limit?: number): Promise<LeaderboardRow[]> {
     const rows: LeaderboardRow[] = [];
-    for (const [playerId, s] of this.stats) rows.push({ playerId, name: this.players.get(playerId) ?? 'Hunter', kills: s.kills, deaths: s.deaths, joins: s.joins, timeSeconds: Math.floor(s.timeMs / 1000) });
-    return sortRows(rows).slice(0, limit);
+    // Union by stable id: registered names (players.json) and everyone with persisted stat events.
+    for (const playerId of new Set([...this.players.keys(), ...this.stats.keys()])) {
+      const s = this.stats.get(playerId) ?? emptyStats();
+      rows.push({ playerId, name: this.players.get(playerId) ?? 'Hunter', kills: s.kills, deaths: s.deaths, joins: s.joins, timeSeconds: Math.floor(s.timeMs / 1000) });
+    }
+    const sorted = sortRows(rows);
+    return limit === undefined ? sorted : sorted.slice(0, limit);
   }
 
   private async load(file: string, each: (row: unknown) => void): Promise<void> {
@@ -309,22 +329,80 @@ class SupabaseLog implements EventLog {
     this.pending.push({ event_id: eventId, room_id: roomId, tick: 0, kind, from_id: playerId, to_id: null, power: null, position: null, text: null, duration_ms: durationMs === undefined ? null : Math.max(0, Math.round(durationMs)) });
   }
 
-  async leaderboard(limit = 10): Promise<LeaderboardRow[]> {
-    const { data, error } = await this.db
-      .from('player_leaderboard')
-      .select('player_id, name, kills, deaths, joins, time_seconds')
-      .order('kills', { ascending: false })
-      .order('deaths', { ascending: true })
-      .order('time_seconds', { ascending: false })
-      .limit(limit);
-    if (error) {
-      this.failures += 1;
-      this.lastError = `player_leaderboard: ${error.message}`;
-      return [];
+  /** Any page error or page-cap exhaustion rejects the whole read: partial totals are never reported as the board. */
+  async leaderboard(limit?: number): Promise<LeaderboardRow[]> {
+    // 1. Every row of the root-owned view (joined hunters), paged in stable player_id order.
+    const byId = new Map<string, LeaderboardRow>();
+    await this.pageAll('player_leaderboard', 'player_id, name, kills, deaths, joins, time_seconds', 'player_id', (r) => {
+      const id = String(r.player_id);
+      byId.set(id, { playerId: id, name: String(r.name ?? 'Hunter'), kills: Number(r.kills ?? 0), deaths: Number(r.deaths ?? 0), joins: Number(r.joins ?? 0), timeSeconds: Number(r.time_seconds ?? 0) });
+    });
+    // 2. Every registered hunter. View stats win; registry-only ids are backfilled from canonical events.
+    const registryOnly: string[] = [];
+    const names = new Map<string, string>();
+    await this.pageAll('players', 'id, name', 'id', (r) => {
+      const id = String(r.id);
+      if (typeof r.name === 'string' && r.name) names.set(id, r.name);
+      if (!byId.has(id)) registryOnly.push(id);
+    });
+    if (registryOnly.length) {
+      const stats = new Map<string, Stats>();
+      const seen = new Set<string>(); // canonical event_id dedupe keeps bump() idempotent across overlapping pages
+      for (let i = 0; i < registryOnly.length; i += ID_BATCH) {
+        const batch = registryOnly.slice(i, i + ID_BATCH);
+        await this.pageAll(
+          'game_events',
+          'event_id, from_id, kind, duration_ms',
+          'event_id',
+          (r) => {
+            const eventId = String(r.event_id);
+            if (seen.has(eventId)) return;
+            seen.add(eventId);
+            bump(stats, { kind: String(r.kind) as StoredEvent['kind'], fromId: String(r.from_id), durationMs: r.duration_ms == null ? undefined : Number(r.duration_ms) });
+          },
+          [
+            { column: 'from_id', values: batch },
+            { column: 'kind', values: [...STAT_KINDS] },
+          ],
+        );
+      }
+      for (const id of registryOnly) {
+        const s = stats.get(id) ?? emptyStats(); // a registered hunter with no stat events is a real zero row
+        byId.set(id, { playerId: id, name: names.get(id) ?? 'Hunter', kills: s.kills, deaths: s.deaths, joins: s.joins, timeSeconds: Math.floor(s.timeMs / 1000) });
+      }
     }
-    return sortRows(
-      (data ?? []).map((r) => ({ playerId: String(r.player_id), name: String(r.name ?? 'Hunter'), kills: Number(r.kills ?? 0), deaths: Number(r.deaths ?? 0), joins: Number(r.joins ?? 0), timeSeconds: Number(r.time_seconds ?? 0) })),
-    );
+    for (const [id, name] of names) {
+      const row = byId.get(id);
+      if (row) row.name = name; // registry carries the current display name; stats untouched
+    }
+    const sorted = sortRows([...byId.values()]);
+    return limit === undefined ? sorted : sorted.slice(0, limit);
+  }
+
+  /** Reads a whole table/view in bounded, stable-ordered pages until a short page; records and throws on any failure. */
+  private async pageAll(
+    table: string,
+    columns: string,
+    orderBy: string,
+    each: (row: Record<string, unknown>) => void,
+    filters: Array<{ column: string; values: string[] }> = [],
+  ): Promise<void> {
+    for (let page = 0, from = 0; page < MAX_PAGES; page += 1, from += PAGE) {
+      let q = this.db.from(table).select(columns).order(orderBy, { ascending: true }).range(from, from + PAGE - 1);
+      for (const f of filters) q = q.in(f.column, f.values); // SDK filters only, no hand-built strings
+      const { data, error } = await q;
+      if (error) throw this.fail(`${table}: ${error.message}`);
+      const rows = (data ?? []) as unknown as Record<string, unknown>[];
+      for (const r of rows) each(r);
+      if (rows.length < PAGE) return;
+    }
+    throw this.fail(`${table}: exceeded ${MAX_PAGES} pages`); // a truncated read is never called complete
+  }
+
+  private fail(message: string): Error {
+    this.failures += 1;
+    this.lastError = message;
+    return new Error(message);
   }
 
   async recent(q: EventQuery): Promise<StoredEvent[]> {

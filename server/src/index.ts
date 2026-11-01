@@ -3,7 +3,7 @@ import { config, missingConfig, presence } from './config.ts';
 import { createDirector } from './director.ts';
 import { EventIds, Fanout, type ServerEvent } from './events.ts';
 import { startGameServer } from './game.ts';
-import { createEventLog } from './integrations/eventlog.ts';
+import { createEventLog, sortRows, type LeaderboardRow } from './integrations/eventlog.ts';
 import { createMemoryStore } from './integrations/memory.ts';
 import { createMinds, loadNpcConfig } from './integrations/minds.ts';
 import { createRehearsal } from './integrations/rehearsal.ts';
@@ -90,18 +90,41 @@ const freestyleHosting = (): Record<string, unknown> => {
     : { mode: 'external-host-unknown', api: 'vps', actorHost: hostname, role: 'actor host is not a style.dev domain' };
 };
 
-/** Public top 10: names only (sanitized, ≤ 36 chars), never ids or keys; cached briefly. */
-let leaderboardCache: { at: number; body: unknown } | null = null;
+/**
+ * Public leaderboard: every registered hunter. The persisted ledger is cached for 5 s; the live overlay
+ * (who is connected right now, including paused/dead hunters and a hunter who just joined before the
+ * ledger flushed) is recomputed on every request and merged by the stable internal id, never by name.
+ * The response carries sanitized names and numeric stats plus `online`; never ids or keys.
+ */
+let ledgerCache: { at: number; rows: LeaderboardRow[] } | null = null;
 const publicLeaderboard = async () => {
-  if (leaderboardCache && Date.now() - leaderboardCache.at < 5000) return leaderboardCache.body;
-  const rows = await eventLog.leaderboard(10).catch(() => []);
-  const body = {
+  if (!ledgerCache || Date.now() - ledgerCache.at >= 5000) {
+    try {
+      // Only a complete, successful all-row read becomes the cache; a failed refresh keeps the last good rows.
+      ledgerCache = { at: Date.now(), rows: await eventLog.leaderboard() };
+    } catch (err) {
+      if (!ledgerCache) throw err; // no good ledger yet: the route reports unavailable rather than an empty board
+      ledgerCache.at = Date.now(); // stale-but-good rows, retried after the usual interval
+    }
+  }
+  const merged = new Map<string, LeaderboardRow & { online: boolean }>();
+  for (const r of ledgerCache.rows) merged.set(r.playerId, { ...r, online: false });
+  for (const room of rooms.values()) {
+    for (const p of room.players.values()) {
+      if (!p.connected) continue;
+      const known = merged.get(p.id);
+      merged.set(p.id, known ? { ...known, name: p.name, online: true } : { playerId: p.id, name: p.name, kills: 0, deaths: 0, joins: 0, timeSeconds: 0, online: true });
+    }
+  }
+  const rows = sortRows([...merged.values()]) as Array<LeaderboardRow & { online: boolean }>;
+  const onlineCount = rows.filter((r) => r.online).length; // unique ids: the same hunter in two rooms counts once
+  return {
     mode: eventLog.mode,
-    players: rows.map((r) => ({ name: sanitizeName(r.name).slice(0, 36), kills: r.kills, deaths: r.deaths, joins: r.joins, timeSeconds: r.timeSeconds })),
+    total: rows.length,
+    onlineCount,
+    players: rows.map((r) => ({ name: sanitizeName(r.name).slice(0, 36), kills: r.kills, deaths: r.deaths, joins: r.joins, timeSeconds: r.timeSeconds, online: r.online })),
     updatedAt: Date.now(),
   };
-  leaderboardCache = { at: Date.now(), body };
-  return body;
 };
 
 const health = () => ({
