@@ -47,7 +47,8 @@ function persist(key: string, value: string): void {
 
 export type Screen = 'splash' | 'main' | 'pause' | 'settings' | 'credits' | 'confirm' | 'leaderboard';
 
-interface BoardRow { name: string; kills: number; deaths: number; joins: number; timeSeconds: number }
+interface BoardRow { name: string; kills: number; deaths: number; joins: number; timeSeconds: number; online: boolean | null }
+const BOARD_REFRESH_MS = 8000;
 const MAX_STAT = 1_000_000_000;
 const stat = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.min(MAX_STAT, Math.max(0, Math.floor(v))) : 0);
 
@@ -109,6 +110,7 @@ export class Menus {
   private readonly shareStatus = $('share-status');
   private readonly joinLink = $<HTMLInputElement>('join-link');
   private boardRequest: AbortController | null = null;
+  private boardTimer = 0;
 
   constructor(private readonly h: MenuHandlers) {
     this.name.value = localStorage.getItem(NAME_KEY) ?? '';
@@ -184,9 +186,13 @@ export class Menus {
     this.root.dataset.screen = screen;
     this.root.classList.toggle('titled', !this.inSession);
     for (const s of this.sections) s.hidden = s.dataset.screen !== screen;
-    if (screen !== 'leaderboard' && this.boardRequest) {
-      this.boardRequest.abort(); // never let a stale ledger request land on another screen
-      this.boardRequest = null;
+    if (screen !== 'leaderboard') {
+      window.clearInterval(this.boardTimer); // presence refresh runs only while the board is open
+      this.boardTimer = 0;
+      if (this.boardRequest) {
+        this.boardRequest.abort(); // never let a stale ledger request land on another screen
+        this.boardRequest = null;
+      }
     }
     if (screen === 'main') $('btn-enter').focus();
     if (screen === 'pause') $('btn-resume').focus();
@@ -242,9 +248,15 @@ export class Menus {
     this.show('leaderboard');
     this.boardRefresh.focus();
     void this.loadLeaderboard();
+    window.clearInterval(this.boardTimer);
+    this.boardTimer = window.setInterval(() => {
+      if (this.screen === 'leaderboard' && !this.boardRequest) void this.loadLeaderboard();
+    }, BOARD_REFRESH_MS);
   }
 
   private closeLeaderboard(): void {
+    window.clearInterval(this.boardTimer);
+    this.boardTimer = 0;
     this.boardRequest?.abort();
     this.boardRequest = null;
     this.show(this.returnTo === 'leaderboard' ? 'main' : this.returnTo);
@@ -262,18 +274,21 @@ export class Menus {
     try {
       const response = await fetch('/api/leaderboard', { signal: request.signal, cache: 'no-store' });
       if (!response.ok) throw new Error(`http ${response.status}`);
-      const body = (await response.json()) as { mode?: unknown; players?: unknown; entries?: unknown; updatedAt?: unknown };
+      const body = (await response.json()) as { mode?: unknown; players?: unknown; entries?: unknown; updatedAt?: unknown; onlineCount?: unknown; total?: unknown };
       if (request.signal.aborted) return;
       const raw = Array.isArray(body.players) ? body.players : Array.isArray(body.entries) ? body.entries : null;
       if (!raw) throw new Error('malformed');
-      const rows: BoardRow[] = raw.slice(0, 10).map((r) => {
+      // Every registered hunter is listed; the wrap scrolls. `online` may be absent from older payloads.
+      const rows: BoardRow[] = raw.map((r) => {
         const o = (r && typeof r === 'object' ? r : {}) as Record<string, unknown>;
-        return { name: typeof o.name === 'string' ? o.name.slice(0, 36) : 'Hunter', kills: stat(o.kills), deaths: stat(o.deaths), joins: stat(o.joins), timeSeconds: stat(o.timeSeconds) };
+        return { name: typeof o.name === 'string' ? o.name.slice(0, 36) : 'Hunter', kills: stat(o.kills), deaths: stat(o.deaths), joins: stat(o.joins), timeSeconds: stat(o.timeSeconds), online: typeof o.online === 'boolean' ? o.online : null };
       });
       this.boardBody.replaceChildren();
       for (const row of rows) {
         const tr = document.createElement('tr');
-        for (const value of [row.name, row.kills, row.deaths, row.joins, Math.floor(row.timeSeconds / 60)]) {
+        if (row.online) tr.dataset.online = 'true';
+        const presence = row.online === null ? '—' : row.online ? 'Online' : 'Offline';
+        for (const value of [row.name, presence, row.kills, row.deaths, row.joins, Math.floor(row.timeSeconds / 60)]) {
           const td = document.createElement('td');
           td.textContent = String(value);
           tr.appendChild(td);
@@ -283,7 +298,8 @@ export class Menus {
       this.boardEmpty.hidden = rows.length > 0;
       const ledger = body.mode === 'supabase' ? 'Saved ledger (Supabase)' : body.mode === 'local-jsonl' ? 'Local saved ledger' : 'Ledger';
       const when = typeof body.updatedAt === 'number' && Number.isFinite(body.updatedAt) ? ` · ${new Date(body.updatedAt).toLocaleTimeString()}` : '';
-      this.boardStatus.textContent = rows.length ? `${ledger} · top ${rows.length}${when}` : `${ledger} · no hunters recorded yet${when}`;
+      const online = typeof body.onlineCount === 'number' ? body.onlineCount : rows.filter((r) => r.online).length;
+      this.boardStatus.textContent = rows.length ? `${ledger} · ${rows.length} hunters · ${online} online${when}` : `${ledger} · no hunters recorded yet${when}`;
     } catch (err) {
       if (request.signal.aborted && this.boardRequest !== request) return; // left the screen or refreshed
       this.boardStatus.textContent = (err as Error)?.name === 'AbortError' ? 'Leaderboard timed out · try Refresh' : 'Leaderboard unavailable · try Refresh';

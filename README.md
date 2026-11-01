@@ -51,7 +51,7 @@ The hunter draws strength from Ganesha, Hanuman, Shiva and Vishnu according to t
 
 Settings control music, voice, effects, look sensitivity and reduced motion. Visible weapon swings and ward animations accompany mouse attacks; enemies lunge on confirmed strikes. Incantations last under two seconds, use distinct portraits, mandalas, wind, frost and chakra effects, and cost 25 vitality. Nearby enemies speak sparingly; the Source answers when you ask. Movement requires held keys and stops when input is released or lost.
 
-The on-screen hunter leaderboard records banishments, deaths, arrivals and play time from server-authored events in Supabase. Open **Leaderboard** from the main menu to inspect the full top-ten ledger, or use **Copy join link** to invite another hunter. Ghost memory and player history continue across hunts.
+The hunter leaderboard includes every registered hunter, including past players and hunters with zero banishments. It shows who is online alongside recorded banishments, deaths, arrivals and play time from server-authored events in Supabase. Open **Leaderboard** from the main menu to browse the complete ledger, or use **Copy join link** to invite another hunter. Ghost memory and player history continue across hunts.
 
 ## Stateful characters: a world that remembers
 
@@ -120,7 +120,7 @@ Keep management credentials and provider keys out of browser code and `VITE_` va
 
 ## Verification and limits
 
-The backend passes 43 focused tests, including repeated strikes for every enemy tactic, ranged-hit retaliation, local pursuit boundaries, reconnect sequence resets, rejection of late input from replaced sockets, and bounded strategy writes for a 50-ghost warning. Network checks cover 50 unique enemies, authoritative health-cost powers, stale-input expiry and leaderboard persistence across a restart; the integrated client build passes. OpenAI Realtime connected in the public browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for exact evidence and limits.
+The backend passes 44 focused tests, including repeated strikes for every enemy tactic, ranged-hit retaliation, local pursuit boundaries, complete leaderboard reads with legacy statistics, reconnect sequence resets, rejection of late input from replaced sockets, and bounded strategy writes for a 50-ghost warning. Network checks cover 50 unique enemies, authoritative health-cost powers, stale-input expiry and leaderboard persistence across a restart; the integrated client build passes. OpenAI Realtime connected in the public browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for exact evidence and limits.
 
 Both frontend and backend are live at the demo URL. The VPS deployment script builds immutable releases from `main`, checks the Source routes before activation and preserves the previous release for rollback. See [deployment instructions](deploy/vps/README.md).
 

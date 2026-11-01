@@ -32,7 +32,9 @@ html, body { margin: 0; height: 100%; background: var(--fog); overflow: hidden; 
 .leaderboard { left: 18px; top: 132px; width: 240px; }
 .leaderboard-heading, .leaderboard li { display: flex; justify-content: space-between; gap: 10px; }
 .leaderboard-heading { color: var(--muted); font-size: 10px; }
-.leaderboard ol { padding: 0; margin: 8px 0; list-style: none; }
+.leaderboard ol { padding: 0; margin: 8px 0; list-style: none; max-height: 24vh; overflow-y: auto; } /* all hunters, compact scroll */
+.leaderboard li[data-online="true"] span { color: #b9d8a8; }
+.board-table tr[data-online="true"] td:nth-child(2) { color: #b9d8a8; }
 .leaderboard li { padding: 5px 0; border-top: 1px solid rgba(214,178,96,.13); font-size: 12px; }
 .leaderboard li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .leaderboard li strong { color: var(--gold); font-variant-numeric: tabular-nums; }
