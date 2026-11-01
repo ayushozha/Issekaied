@@ -37,7 +37,7 @@ A first-person Halloween adventure built around **stateful characters** and **ag
 
 Your old world ended. A ten-second narrated prologue brings you into Bellgrave: a hand-built Halloween realm of pumpkin graves, ruined chapel arches, lantern paths and a guarded eastern altar. Fifty enemies inhabit the expanded map. Recover three sigils from Morrow, Nix and Vesper, then confront Raksha. The echo portal changes the encounter inside this same world.
 
-The hunter draws strength from Ganesha, Hanuman, Shiva and Vishnu according to the encounter. There is no deity-selection screen. Ghosts patrol their own areas, warn one another and adapt when a remembered hunter returns.
+The hunter draws strength from Ganesha, Hanuman, Shiva and Vishnu according to the encounter. There is no deity-selection screen. Ghosts patrol their own areas, warn one another and adapt when a remembered hunter returns. Engaged ghosts close in to strike: evasive ghosts retreat briefly between attacks, and ambushers wait briefly before charging. A ranged hit provokes the struck ghost within its pursuit boundary; the gate remains safe ground.
 
 | Control | Action |
 | --- | --- |
@@ -49,7 +49,7 @@ The hunter draws strength from Ganesha, Hanuman, Shiva and Vishnu according to t
 | V / The Source panel | Push-to-talk, or type a question |
 | Escape | Pause and release the mouse |
 
-Settings control music, voice, effects, look sensitivity and reduced motion. Visible weapon swings and ward animations accompany mouse attacks. Incantations last under two seconds, use distinct portraits, mandalas, wind, frost and chakra effects, and cost 25 vitality. Nearby enemies speak sparingly; the Source answers when you ask. Movement requires held keys and stops when input is released or lost.
+Settings control music, voice, effects, look sensitivity and reduced motion. Visible weapon swings and ward animations accompany mouse attacks; enemies lunge on confirmed strikes. Incantations last under two seconds, use distinct portraits, mandalas, wind, frost and chakra effects, and cost 25 vitality. Nearby enemies speak sparingly; the Source answers when you ask. Movement requires held keys and stops when input is released or lost.
 
 The on-screen hunter leaderboard records banishments, deaths, arrivals and play time from server-authored events in Supabase. Open **Leaderboard** from the main menu to inspect the full top-ten ledger, or use **Copy join link** to invite another hunter. Ghost memory and player history continue across hunts.
 
@@ -120,7 +120,7 @@ Keep management credentials and provider keys out of browser code and `VITE_` va
 
 ## Verification and limits
 
-The backend passes 35 focused tests, including reconnect sequence resets, rejection of late input from replaced sockets, and bounded strategy writes for a 50-ghost warning. Network checks cover 50 unique enemies, authoritative health-cost powers, stale-input expiry and leaderboard persistence across a restart; the integrated client build passes. OpenAI Realtime connected in the public browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for exact evidence and limits.
+The backend passes 43 focused tests, including repeated strikes for every enemy tactic, ranged-hit retaliation, local pursuit boundaries, reconnect sequence resets, rejection of late input from replaced sockets, and bounded strategy writes for a 50-ghost warning. Network checks cover 50 unique enemies, authoritative health-cost powers, stale-input expiry and leaderboard persistence across a restart; the integrated client build passes. OpenAI Realtime connected in the public browser and answered grounded objective questions with streamed audio. Hosted Terse state survived service restart; actual Relay delivery and database RLS/idempotency/search were checked independently. See [the demo notes](docs/DEMO.md) for exact evidence and limits.
 
 Both frontend and backend are live at the demo URL. The VPS deployment script builds immutable releases from `main`, checks the Source routes before activation and preserves the previous release for rollback. See [deployment instructions](deploy/vps/README.md).
 

@@ -67,6 +67,18 @@ const SPRITE_EMISSIVE = new Color3(0.82, 0.78, 0.74);
 const HIT_EMISSIVE = new Color3(1.0, 0.68, 0.46);
 const SPECTRAL_ALPHA = 0.94;
 const RETURNING_ALPHA = 0.42;
+/**
+ * Attack read on a server-confirmed hit: the drawn `visual` (never `root`) pulls back, lunges toward the
+ * struck point in world XZ, then settles to exactly zero. Timeline in seconds; offsets in meters.
+ */
+const ATTACK_WINDUP = 0.1;
+const ATTACK_STRIKE = 0.2; // end of lunge (peak reach)
+const ATTACK_DURATION = 0.38;
+const ATTACK_PULLBACK = 0.14;
+const ATTACK_REACH_MIN = 0.2;
+const ATTACK_REACH_MAX = 0.6;
+/** Remembered event ids per enemy; ample for a burst of distinct server hits, bounded memory. */
+const ATTACK_SEEN_MAX = 4;
 
 /** Minimum cosine between aim and the direction to a haunt for it to count as targeted. */
 export const aimThreshold = (dist: number): number => (dist < 6 ? 0.93 : 0.985);
@@ -156,6 +168,13 @@ interface EnemyView {
   /** Current and goal opacity for the soft banish/return fade (1 hunting, dim returning, 0 banished). */
   alpha: number;
   alphaGoal: number;
+  /** Attack pose: elapsed seconds (-1 idle), unit world-XZ direction, peak reach, start offset, seen event ids. */
+  atkT: number;
+  atkDirX: number;
+  atkDirZ: number;
+  atkReach: number;
+  atkFrom: number;
+  atkSeen: string[];
 }
 
 interface PlayerView {
@@ -178,6 +197,7 @@ export class EntityLayer {
   private readonly ring: Mesh;
   private readonly shadowMat: StandardMaterial;
   private targetId: string | null = null;
+  private reducedMotion = false;
   private readonly atlases = new Map<string, { tex: Texture; state: 'loading' | 'ready' | 'failed' }>();
 
   constructor(private readonly scene: Scene, private readonly glow: GlowLayer | null = null) {
@@ -249,6 +269,58 @@ export class EntityLayer {
     }, 130);
   }
 
+  /**
+   * Readable attack on a server-confirmed hit by `enemyId`. No-op for non-enemies (hunter attackers), hidden
+   * haunts, reduced motion, or an event id this enemy already played. A new distinct hit restarts the pose
+   * only once the current lunge has peaked, starting from the current offset (no pop); earlier ones are
+   * absorbed by the strike already on screen. Only `visual.position.x/z` move; root/target/y stay untouched.
+   */
+  animateAttack(enemyId: string, hitTarget: Vector3, eventId: string): void {
+    const v = this.enemies.get(enemyId);
+    if (!v || v.state.state !== 'hunting' || !v.root.isEnabled()) return;
+    if (eventId && v.atkSeen.includes(eventId)) return;
+    if (eventId) {
+      v.atkSeen.push(eventId);
+      if (v.atkSeen.length > ATTACK_SEEN_MAX) v.atkSeen.shift();
+    }
+    if (this.reducedMotion) return;
+    if (v.atkT >= 0 && v.atkT < ATTACK_STRIKE) return;
+    const dx = hitTarget.x - v.root.position.x;
+    const dz = hitTarget.z - v.root.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (!Number.isFinite(dist) || dist < 0.05) return; // no meaningful direction
+    // Root is never rotated/scaled for haunts, so the visual's local XZ equals world XZ.
+    v.atkFrom = v.atkT >= 0 ? v.visual.position.x * (dx / dist) + v.visual.position.z * (dz / dist) : 0;
+    v.atkDirX = dx / dist;
+    v.atkDirZ = dz / dist;
+    v.atkReach = Math.min(ATTACK_REACH_MAX, Math.max(ATTACK_REACH_MIN, dist * 0.45));
+    v.atkT = 0;
+  }
+
+  /** Disables the attack lunge; enabling it immediately returns every running pose to neutral. */
+  setReducedMotion(on: boolean): void {
+    this.reducedMotion = on;
+    if (on) for (const v of this.enemies.values()) this.resetAttack(v);
+  }
+
+  private resetAttack(v: EnemyView): void {
+    v.atkT = -1;
+    v.visual.position.x = 0;
+    v.visual.position.z = 0;
+  }
+
+  /** Signed offset along the attack direction at time t (pull back, lunge, settle to exactly 0). */
+  private attackOffset(v: EnemyView): number {
+    const t = v.atkT;
+    const ease = (a: number) => a * a * (3 - 2 * a);
+    if (t < ATTACK_WINDUP) return v.atkFrom + (-ATTACK_PULLBACK - v.atkFrom) * ease(t / ATTACK_WINDUP);
+    if (t < ATTACK_STRIKE) {
+      const a = (t - ATTACK_WINDUP) / (ATTACK_STRIKE - ATTACK_WINDUP);
+      return -ATTACK_PULLBACK + (v.atkReach + ATTACK_PULLBACK) * (1 - (1 - a) * (1 - a));
+    }
+    return v.atkReach * (1 - ease(Math.min(1, (t - ATTACK_STRIKE) / (ATTACK_DURATION - ATTACK_STRIKE))));
+  }
+
   applySnapshot(snap: RoomSnapshot, selfId: string | null): void {
     const seenEnemies = new Set<string>();
     for (const e of snap.enemies) {
@@ -305,6 +377,15 @@ export class EntityLayer {
       // Sprites sit on the ground plane, independent of the server's centre y. Only spectral haunts drift.
       const hover = SPRITES[v.key]?.spectral === false ? 0 : Math.sin(v.phase * 0.9) * 0.05;
       v.visual.position.y = -v.root.position.y + v.base + hover;
+      if (v.atkT >= 0) {
+        v.atkT += dt;
+        if (v.atkT >= ATTACK_DURATION) this.resetAttack(v);
+        else {
+          const s = this.attackOffset(v);
+          v.visual.position.x = v.atkDirX * s;
+          v.visual.position.z = v.atkDirZ * s;
+        }
+      }
       if (v.shadow) v.shadow.position.y = -v.root.position.y + 0.03;
       if (v.state.id === this.targetId && v.state.state !== 'banished') {
         this.ring.position.set(v.root.position.x, 0.06, v.root.position.z);
@@ -371,7 +452,7 @@ export class EntityLayer {
     marker.isPickable = false;
     this.glow?.addExcludedMesh(marker);
     const label = new Label(this.scene, visual, 1.75, 1.3, this.glow);
-    const view: EnemyView = { root, visual, marker, sprite: null, spriteMat: null, shadow: null, label, target: root.position.clone(), state: e, key, height: 1.5, base: def?.base ?? 0.1, phase: Math.random() * 6, hitTimer: 0, alpha: 1, alphaGoal: 1 };
+    const view: EnemyView = { root, visual, marker, sprite: null, spriteMat: null, shadow: null, label, target: root.position.clone(), state: e, key, height: 1.5, base: def?.base ?? 0.1, phase: Math.random() * 6, hitTimer: 0, alpha: 1, alphaGoal: 1, atkT: -1, atkDirX: 0, atkDirZ: 0, atkReach: 0, atkFrom: 0, atkSeen: [] };
     this.enemies.set(e.id, view);
     if (def) {
       this.ensureAtlas(def.atlas);
@@ -444,6 +525,7 @@ export class EntityLayer {
     const e = view.state;
     const full = SPRITES[view.key]?.spectral ? SPECTRAL_ALPHA : 1;
     view.alphaGoal = e.state === 'banished' ? 0 : e.state === 'returning' ? RETURNING_ALPHA : full;
+    if (e.state !== 'hunting' && view.atkT >= 0) this.resetAttack(view);
     // Visible states re-enable immediately; the banished fade-out switches the root off from update().
     // Without a sprite there is nothing to fade, so the marker toggles instantly as before.
     if (view.alphaGoal > 0) view.root.setEnabled(true);
@@ -467,6 +549,7 @@ export class EntityLayer {
 
   private disposeEnemy(id: string, v: EnemyView): void {
     window.clearTimeout(v.hitTimer);
+    this.resetAttack(v);
     v.label.dispose();
     v.spriteMat?.diffuseTexture?.dispose();
     v.spriteMat?.dispose();

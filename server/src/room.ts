@@ -69,6 +69,10 @@ const PARKED_TTL_MS = 120_000;
 const ENCOUNTER_RANGE_M = 14;
 const GATE_NOTICE_MS = 5000;
 const ZERO: XZ = { x: 0, z: 0 };
+/** An ambusher waits this long after acquiring a distant target before it charges; never an indefinite freeze. */
+const AMBUSH_WINDUP_MS = 1200;
+/** Ambushers lie still only beyond this range during the windup; keep_distance fighters back off only this far. */
+const AMBUSH_HOLD_M = 9;
 
 export interface RoomPlayer {
   id: string;
@@ -126,6 +130,8 @@ export interface RoomEnemy {
   aggroBonus: number;
   slowUntil: number;
   nextAttackAt: number;
+  /** Transient tactic timer: an ambusher lies still until this instant after acquiring a target, then commits. */
+  holdUntil: number;
   /** Tactic adopted on the next return (rehearsal, hivemind or mind output, already validated). */
   pendingStrategy?: GhostStrategy;
   lastBanisher?: { hunterId: string; hunterName: string; power: PowerId };
@@ -230,6 +236,7 @@ export class Room {
       aggroBonus: 0,
       slowUntil: 0,
       nextAttackAt: 0,
+      holdUntil: 0,
       grudgeHunters: new Set(),
       greeted: new Set(),
     }));
@@ -462,7 +469,8 @@ export class Room {
       return false;
     }
     e.hp = Math.max(0, e.hp - amount);
-    if (!e.targetId && this.targetable(p, e, 'acquire')) e.targetId = p.id; // being struck wakes a patrolling haunt
+    // Being struck wakes this haunt alone: the shooter need not be inside ambient aggro, only within the home leash.
+    if (!e.targetId && this.targetable(p, e, 'keep')) this.aimAt(e, p, now);
     this.emit({ kind: 'hit', action, fromId: p.id, toId: e.id, power, position: vec(e, ENEMY_Y) });
     if (e.hp <= 0) this.banish(e, p, power, distance, now);
     return true;
@@ -729,7 +737,8 @@ export class Room {
     let hunter = e.targetId ? this.players.get(e.targetId) : undefined;
     if (!this.targetable(hunter, e, 'keep')) {
       hunter = this.acquire(e) ?? undefined;
-      e.targetId = hunter?.id ?? null;
+      if (hunter) this.aimAt(e, hunter, now);
+      else e.targetId = null;
     }
     if (!hunter) {
       this.patrol(e);
@@ -743,6 +752,17 @@ export class Room {
     }
   }
 
+  /** Acquire a hunter and restart the transient tactic timer (ambush windup). */
+  private aimAt(e: RoomEnemy, hunter: RoomPlayer, now: number): void {
+    e.targetId = hunter.id;
+    e.holdUntil = now + AMBUSH_WINDUP_MS;
+  }
+
+  /**
+   * Every tactic ends in a real strike: all haunts hit only inside MELEE_REACH, so no tactic may hold range forever.
+   * keep_distance: close and strike, then back off only during the attack recovery, then close again.
+   * ambush: lie still for a finite windup while the target is beyond AMBUSH_HOLD_M, then charge fast.
+   */
   private pursue(e: RoomEnemy, hunter: RoomPlayer, now: number): void {
     const dist = dist2d(hunter, e);
     const dir: XZ = dist > 0.01 ? { x: (hunter.x - e.x) / dist, z: (hunter.z - e.z) / dist } : ZERO;
@@ -751,13 +771,13 @@ export class Room {
     let move = approach;
     switch (e.strategy) {
       case 'keep_distance':
-        move = dist < 9 ? { x: -dir.x, z: -dir.z } : dist > 12 ? dir : ZERO;
+        move = now < e.nextAttackAt && dist < AMBUSH_HOLD_M ? { x: -dir.x, z: -dir.z } : approach;
         break;
       case 'flank':
         move = dist > 3 ? { x: dir.x * 0.6 - dir.z * 0.8, z: dir.z * 0.6 + dir.x * 0.8 } : approach;
         break;
       case 'ambush':
-        if (dist > 9) speed = 0;
+        if (dist > AMBUSH_HOLD_M && now < e.holdUntil) speed = 0;
         else speed *= 1.6;
         break;
     }
